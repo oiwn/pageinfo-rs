@@ -4,8 +4,10 @@ use dom_content_extraction::{get_node_text, DensityTree};
 use html::PageInfo;
 use reqwest::Url;
 use std::error::Error;
+use trackers::PageTrackers;
 
 mod html;
+mod trackers;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -27,6 +29,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let content = retrieve_page(&parsed_url).await?;
     let document = Html::parse_document(&content);
+
+    // Extract trackers
+    let trackers = PageTrackers::from_html(&content);
+    println!("Trackers: {:?}", trackers.trackers);
 
     // Extract html info
     let page_info = PageInfo::new(&document);

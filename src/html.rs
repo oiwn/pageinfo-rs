@@ -53,11 +53,11 @@ impl PageInfo {
 impl fmt::Display for PageInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Title: {}", self.title.clone().unwrap_or_default())?;
-        writeln!(f, "Meta tags:")?;
+        writeln!(f, "\nMeta tags:")?;
         for (i, meta) in self.meta.iter().enumerate() {
-            writeln!(f, "Meta tag {}:", i + 1)?;
+            writeln!(f, "  Meta tag {}:", i + 1)?;
             for (k, v) in meta {
-                writeln!(f, "  {}: {}", k, v)?;
+                writeln!(f, "    {}: {}", k, v)?;
             }
         }
         writeln!(f, "\nHTML tag attributes:")?;
