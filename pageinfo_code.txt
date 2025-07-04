@@ -1,0 +1,205 @@
+This is a collection of source code files from a project. Each file is separated by '---' delimiters.
+The files include Git metadata showing their last modification details.
+
+Key points for analysis:
+1. Focus on the architectural patterns used across files
+2. Identify any potential code quality issues
+3. Note the temporal relationship between changes using Git timestamps
+4. Consider suggesting improvements while maintaining the existing design philosophy
+
+---
+File: src/html.rs
+Last commit: 4a7108d3c1edc4512c8d16a53effa79c138dfd2e
+Last update: 1751560710
+---
+use dom_content_extraction::scraper::{Html, Selector};
+use std::collections::HashMap;
+use std::fmt;
+
+/// Extract valuable data from html
+pub struct PageInfo {
+    title: Option<String>,
+    meta: Vec<HashMap<String, String>>,
+    html_attrs: HashMap<String, String>,
+}
+
+impl PageInfo {
+    pub fn new(page: &Html) -> Self {
+        PageInfo {
+            title: Self::extract_title(page),
+            meta: Self::extract_meta_tags(page),
+            html_attrs: Self::extract_html_attributes(page),
+        }
+    }
+
+    fn extract_title(page: &Html) -> Option<String> {
+        let title_selector = Selector::parse("title").unwrap();
+        page.select(&title_selector)
+            .next()
+            .map(|element| element.inner_html())
+    }
+
+    pub fn extract_meta_tags(page: &Html) -> Vec<HashMap<String, String>> {
+        let meta_selector = Selector::parse("meta").unwrap();
+
+        page.select(&meta_selector)
+            .map(|element| {
+                element
+                    .value()
+                    .attrs()
+                    .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn extract_html_attributes(page: &Html) -> HashMap<String, String> {
+        let html_selector = Selector::parse("html").unwrap();
+        let html_element = page.select(&html_selector).next().unwrap();
+        html_element
+            .value()
+            .attrs()
+            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+            .collect()
+    }
+}
+
+impl fmt::Display for PageInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Title: {}", self.title.clone().unwrap_or_default())?;
+        writeln!(f, "Meta tags:")?;
+        for (i, meta) in self.meta.iter().enumerate() {
+            writeln!(f, "Meta tag {}:", i + 1)?;
+            for (k, v) in meta {
+                writeln!(f, "  {}: {}", k, v)?;
+            }
+        }
+        writeln!(f, "\nHTML tag attributes:")?;
+        for (k, v) in &self.html_attrs {
+            writeln!(f, "  {}: {}", k, v)?;
+        }
+        Ok(())
+    }
+}
+
+
+---
+File: src/main.rs
+Last commit: 4a7108d3c1edc4512c8d16a53effa79c138dfd2e
+Last update: 1751560710
+---
+use chromiumoxide::Browser;
+use clap::Parser;
+use clap::{Arg, Command, Subcommand};
+use dom_content_extraction::{get_content, scraper::Html};
+use html::PageInfo;
+use reqwest::Url;
+use std::error::Error;
+
+mod browser;
+mod html;
+mod http;
+
+/// CLI tool to research web pages
+#[derive(Parser, Debug)]
+#[command(name = "Pageinfo")]
+#[command(author = "oiwn <https://github.org/oiwn>")]
+#[command(version = "0.1")]
+#[command(about = "CLI tool to research web pages", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Load page using reqwest
+    Fetch {
+        /// URL to load
+        #[arg(short, long)]
+        url: String,
+    },
+
+    /// Load page using headless browser (spider_chrome)
+    Browse {
+        /// URL to load
+        #[arg(short, long)]
+        url: String,
+    },
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Commands::Fetch { url } => {
+            let parsed_url = Url::parse(url)?;
+            let response = retrieve_page(&parsed_url).await?;
+            println!("Response:\n {}", response);
+            let document = Html::parse_document(&response);
+
+            let page_info = PageInfo::new(&document);
+            println!("Info: {}", page_info);
+
+            let content = get_content(&document).unwrap();
+            println!("Content:\n{}", content);
+        }
+        Commands::Browse { url } => {}
+    };
+
+    Ok(())
+}
+
+async fn retrieve_page(url: &Url) -> Result<String, Box<dyn Error>> {
+    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36";
+
+    let client = reqwest::Client::builder().user_agent(user_agent).build()?;
+    let resp = client.get(url.clone()).send().await?;
+    Ok(resp.text().await?)
+}
+
+
+---
+File: src/http.rs
+Last commit: 4a7108d3c1edc4512c8d16a53effa79c138dfd2e
+Last update: 1751560710
+---
+
+
+---
+File: src/browser.rs
+Last commit: 4a7108d3c1edc4512c8d16a53effa79c138dfd2e
+Last update: 1751560710
+---
+use chromiumoxide::{Browser, LaunchOptionsBuilder, Tab};
+use std::error::Error;
+
+pub struct BrowserClient {
+    tab: Tab,
+}
+
+impl BrowserClient {
+    pub fn new() -> Result<Self, Box<dyn Error>> {
+        let browser = Browser::new(
+            LaunchOptionsBuilder::default()
+                .headless(true)
+                .build()
+                .unwrap(),
+        )?;
+        let tab = browser.wait_for_initial_tab()?;
+        Ok(Self { tab })
+    }
+
+    pub fn load_url(&self, url: &str) -> Result<(), Box<dyn Error>> {
+        self.tab.navigate_to(url)?;
+        self.tab.wait_until_navigated()?;
+
+        let title = self.tab.get_title()?;
+        println!("Title: {}", title);
+
+        Ok(())
+    }
+}
+
+

@@ -1,2 +1,3 @@
 # pageinfo-rs
-Extract useful information from arbitrary page
+
+Cli tool to research web pages. 

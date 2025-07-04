@@ -1,49 +1,68 @@
-use clap::{Arg, Command};
-use dom_content_extraction::scraper::Html;
-use dom_content_extraction::{get_node_text, DensityTree};
+use crate::browser::BrowserClient;
+use chromiumoxide::Browser;
+use clap::{Parser, Subcommand};
+use dom_content_extraction::{get_content, scraper::Html};
 use html::PageInfo;
 use reqwest::Url;
 use std::error::Error;
 
+mod browser;
 mod html;
+mod http;
+
+/// CLI tool to research web pages
+#[derive(Parser, Debug)]
+#[command(name = "Pageinfo")]
+#[command(author = "oiwn <https://github.org/oiwn>")]
+#[command(version = "0.1")]
+#[command(about = "CLI tool to research web pages", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Load page using reqwest
+    Fetch {
+        /// URL to load
+        #[arg(short, long)]
+        url: String,
+    },
+
+    /// Load page using headless browser (spider_chrome)
+    Browse {
+        /// URL to load
+        #[arg(short, long)]
+        url: String,
+    },
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let matches = Command::new("Pageinfo")
-        .version("0.1")
-        .author("oiwn <https://github.org/oiwn>>")
-        .about("Retrieves a web page")
-        .arg(
-            Arg::new("url")
-                .short('u')
-                .long("url")
-                .value_name("URL")
-                .required(true),
-        )
-        .get_matches();
+    let cli = Cli::parse();
 
-    let url = matches.get_one::<String>("url").unwrap();
-    let parsed_url = Url::parse(url)?;
+    match &cli.command {
+        Commands::Fetch { url } => {
+            let parsed_url = Url::parse(url)?;
+            let response = retrieve_page(&parsed_url).await?;
+            println!("Response:\n {}", response);
+            let document = Html::parse_document(&response);
 
-    let content = retrieve_page(&parsed_url).await?;
-    let document = Html::parse_document(&content);
+            let page_info = PageInfo::new(&document);
+            println!("Info: {}", page_info);
 
-    // Extract html info
-    let page_info = PageInfo::new(&document);
-    println!("Info: {}", page_info);
-
-    let dtree = DensityTree::from_document(&document);
-    let sorted_nodes = dtree.sorted_nodes();
-
-    let longest_text = sorted_nodes
-        .iter()
-        .rev()
-        .take(8)
-        .map(|x| get_node_text(x.node_id, &document))
-        .max_by_key(|s| s.len())
-        .unwrap();
-
-    println!("Content:\n{}", longest_text);
+            let content = get_content(&document).unwrap();
+            println!("Content:\n{}", content);
+        }
+        Commands::Browse { url } => {
+            let browser_client = BrowserClient::new().await.unwrap();
+            let html_text = browser_client.load_url(url).await.unwrap();
+            let document = Html::parse_document(&html_text);
+            let content = get_content(&document).unwrap();
+            println!("Content:\n{}", content);
+        }
+    };
 
     Ok(())
 }
@@ -53,6 +72,5 @@ async fn retrieve_page(url: &Url) -> Result<String, Box<dyn Error>> {
 
     let client = reqwest::Client::builder().user_agent(user_agent).build()?;
     let resp = client.get(url.clone()).send().await?;
-    let content = resp.text().await?;
-    Ok(content)
+    Ok(resp.text().await?)
 }
