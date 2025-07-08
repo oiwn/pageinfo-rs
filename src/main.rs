@@ -1,5 +1,4 @@
 use crate::browser::BrowserClient;
-use chromiumoxide::Browser;
 use clap::{Parser, Subcommand};
 use dom_content_extraction::{get_content, scraper::Html};
 use html::PageInfo;
@@ -9,6 +8,7 @@ use std::error::Error;
 mod browser;
 mod html;
 mod http;
+mod stand;
 
 /// CLI tool to research web pages
 #[derive(Parser, Debug)]
@@ -36,6 +36,20 @@ enum Commands {
         #[arg(short, long)]
         url: String,
     },
+    /// Test bot detection with realistic browser fingerprinting
+    BotTest {
+        /// Output filename for screenshot (default: bot_test.png)
+        #[arg(short, long, default_value = "bot_test.png")]
+        output: String,
+
+        /// Use headless mode
+        #[arg(long)]
+        headless: bool,
+
+        /// Chrome endpoint URL (default: http://localhost:9222)
+        #[arg(long, default_value = "http://localhost:9222")]
+        chrome_url: String,
+    },
 }
 
 #[tokio::main]
@@ -61,6 +75,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let document = Html::parse_document(&html_text);
             let content = get_content(&document).unwrap();
             println!("Content:\n{}", content);
+        }
+        Commands::BotTest {
+            output,
+            headless,
+            chrome_url,
+        } => {
+            stand::handle_bot_test(output, *headless, chrome_url).await?;
         }
     };
 
