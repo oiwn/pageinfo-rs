@@ -65,7 +65,7 @@ pub async fn handle_bot_test(
     let extra_headers = spoof_headers::headers_to_hashmap(headers);
 
     // Configure handler for maximum stealth
-    let config = HandlerConfig {
+    let _config = HandlerConfig {
         request_intercept: true,
         viewport: Some(chromiumoxide::handler::viewport::Viewport {
             width: viewport.width,
@@ -138,6 +138,7 @@ pub async fn handle_bot_test(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn test_bot_detection() -> Result<(), Box<dyn std::error::Error>> {
     // Create realistic user agent
     let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
@@ -194,7 +195,7 @@ pub async fn test_bot_detection() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Connect to Chrome instance (assuming it's running on localhost:9222)
-    let (mut browser, mut handler) =
+    let (browser, mut handler) =
         Browser::connect_with_config("http://localhost:9222", config).await?;
 
     // Spawn handler task
@@ -253,6 +254,7 @@ pub async fn test_bot_detection() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Alternative version if you want to launch Chrome instead of connecting
+#[allow(dead_code)]
 pub async fn test_bot_detection_with_launch()
 -> Result<(), Box<dyn std::error::Error>> {
     use chromiumoxide::browser::BrowserConfig;
@@ -316,7 +318,7 @@ pub async fn test_bot_detection_with_launch()
 
     // Set extra headers
     if !extra_headers.is_empty() {
-        use chromiumoxide::cdp::browser_protocol::network::Headers;
+        // use chromiumoxide::cdp::browser_protocol::network::Headers;
         use chromiumoxide::cdp::browser_protocol::network::SetExtraHttpHeadersParams;
 
         let headers_json = serde_json::to_value(&extra_headers)?;

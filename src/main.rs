@@ -1,8 +1,7 @@
 use crate::browser::BrowserClient;
 use clap::{Parser, Subcommand};
 use dom_content_extraction::{get_content, scraper::Html};
-use html::PageInfo;
-use reqwest::Url;
+use spider_fingerprint::url;
 use std::error::Error;
 
 mod browser;
@@ -24,7 +23,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Load page using reqwest
-    Fetch {
+    Http {
         /// URL to load
         #[arg(short, long)]
         url: String,
@@ -57,17 +56,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Fetch { url } => {
-            let parsed_url = Url::parse(url)?;
-            let response = retrieve_page(&parsed_url).await?;
-            println!("Response:\n {}", response);
-            let document = Html::parse_document(&response);
+        Commands::Http { url } => {
+            let url = url::Url::parse(url)?;
+            match http::retrieve_page(&url).await {
+                Ok(transaction) => {
+                    println!("{}", transaction.format_for_llm());
 
-            let page_info = PageInfo::new(&document);
-            println!("Info: {}", page_info);
+                    // Parse the HTML and extract page info
+                    let html = Html::parse_document(&transaction.response.body);
+                    let page_info = html::PageInfo::new(&html);
 
-            let content = get_content(&document).unwrap();
-            println!("Content:\n{}", content);
+                    println!("\n=== PAGE INFO ===");
+                    println!("{}", page_info);
+                    println!("================");
+
+                    // You can also access individual components
+                    if transaction.response.status == 200 {
+                        println!("Success!");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Request failed: {}", e);
+                }
+            }
         }
         Commands::Browse { url } => {
             let browser_client = BrowserClient::new().await.unwrap();
@@ -86,12 +97,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     Ok(())
-}
-
-async fn retrieve_page(url: &Url) -> Result<String, Box<dyn Error>> {
-    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36";
-
-    let client = reqwest::Client::builder().user_agent(user_agent).build()?;
-    let resp = client.get(url.clone()).send().await?;
-    Ok(resp.text().await?)
 }

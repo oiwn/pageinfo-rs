@@ -1,4 +1,4 @@
-use chromiumoxide::{Browser, BrowserConfig, Handler, Page, browser::HeadlessMode};
+use chromiumoxide::{Browser, BrowserConfig, browser::HeadlessMode};
 use futures_util::StreamExt;
 use std::error::Error;
 
@@ -30,17 +30,5 @@ impl BrowserClient {
 
         let content = page.content().await?;
         Ok(content)
-    }
-
-    pub async fn launch_for_bot_test()
-    -> Result<(Browser, Handler), Box<dyn std::error::Error>> {
-        let (browser, handler) = Browser::launch(
-            BrowserConfig::builder()
-                .build()
-                .map_err(|e| format!("Failed to build config: {}", e))?,
-        )
-        .await?;
-
-        Ok((browser, handler))
     }
 }
