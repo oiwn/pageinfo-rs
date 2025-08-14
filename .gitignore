@@ -16,3 +16,4 @@ Cargo.lock
 .amc.toml
 pageinfo_*.txt
 *.png
+CLAUDE.md

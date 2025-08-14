@@ -154,13 +154,9 @@ pub async fn retrieve_page(url: &Url) -> Result<HttpTransaction, HttpError> {
     let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36";
 
     let client = wreq::Client::builder().user_agent(user_agent).build()?;
-
     let mut builder = HttpTransactionBuilder::new("GET", url.as_str());
-
     let request = client.get(url.clone()).build()?;
-
     builder = builder.request_headers(request.headers());
-
     let response = client.execute(request).await?;
 
     // Extract what we need from response before consuming it

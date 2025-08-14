@@ -3,10 +3,12 @@ use clap::{Parser, Subcommand};
 use dom_content_extraction::{get_content, scraper::Html};
 use spider_fingerprint::url;
 use std::error::Error;
+use std::path::PathBuf;
 
 mod browser;
 mod html;
 mod http;
+mod httpreq;
 mod stand;
 
 /// CLI tool to research web pages
@@ -48,6 +50,12 @@ enum Commands {
         /// Chrome endpoint URL (default: http://localhost:9222)
         #[arg(long, default_value = "http://localhost:9222")]
         chrome_url: String,
+    },
+    /// Execute HTTP request from TOML config file
+    HttpReq {
+        /// Path to TOML config file
+        #[arg(short, long)]
+        config_file: PathBuf,
     },
 }
 
@@ -93,6 +101,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             chrome_url,
         } => {
             stand::handle_bot_test(output, *headless, chrome_url).await?;
+        }
+        Commands::HttpReq { config_file } => {
+            match httpreq::run_from_file(config_file).await {
+                Ok(_) => {},
+                Err(e) => {
+                    eprintln!("HTTP request failed: {}", e);
+                }
+            }
         }
     };
 

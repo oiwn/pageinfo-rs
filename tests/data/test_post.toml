@@ -1,0 +1,10 @@
+[request]
+url = "https://httpbin.org/post"
+method = "POST"
+
+[headers]
+"Content-Type" = "application/json"
+
+[body]
+"key1" = "value1"
+"key2" = "value2"

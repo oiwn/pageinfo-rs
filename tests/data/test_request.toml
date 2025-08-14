@@ -1,0 +1,7 @@
+[request]
+url = "https://httpbin.org/get"
+method = "GET"
+
+[headers]
+"Accept" = "application/json"
+"Custom-Header" = "test-value"

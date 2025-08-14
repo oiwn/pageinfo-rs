@@ -1,0 +1,9 @@
+[request]
+url = "https://httpbin.org/post"
+method = "POST"
+
+[headers]
+"Content-Type" = "application/json"
+
+[body]
+text = '{"message": "Hello from pageinfo-rs!", "timestamp": "2024-01-01T00:00:00Z"}'
