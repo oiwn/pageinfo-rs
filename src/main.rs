@@ -36,6 +36,9 @@ enum Commands {
         /// URL to load
         #[arg(short, long)]
         url: String,
+        /// Enable network traffic analysis
+        #[arg(long)]
+        network_analysis: bool,
     },
     /// Test bot detection with realistic browser fingerprinting
     BotTest {
@@ -88,12 +91,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        Commands::Browse { url } => {
+        Commands::Browse { url, network_analysis } => {
             let browser_client = BrowserClient::new().await.unwrap();
-            let html_text = browser_client.load_url(url).await.unwrap();
-            let document = Html::parse_document(&html_text);
-            let content = get_content(&document).unwrap();
-            println!("Content:\n{}", content);
+            
+            if *network_analysis {
+                // Use network analysis mode
+                let (html_text, network_analysis) = browser_client.load_url_with_network_analysis(url).await.unwrap();
+                
+                // Extract and display content
+                let document = Html::parse_document(&html_text);
+                let content = get_content(&document).unwrap();
+                println!("Content:\n{}", content);
+                
+                // Display network analysis
+                println!("\n=== NETWORK ANALYSIS ===");
+                println!("Total Requests: {}", network_analysis.total_requests);
+                println!("Load Time: {}ms", network_analysis.load_time);
+                println!("Total Size: {:.2}KB", network_analysis.total_size as f64 / 1024.0);
+                
+                println!("\nRequest Types:");
+                for (req_type, count) in &network_analysis.requests_by_type {
+                    println!("  {}: {}", req_type, count);
+                }
+                
+                if !network_analysis.failed_requests.is_empty() {
+                    println!("\nFailed Requests:");
+                    for failure in &network_analysis.failed_requests {
+                        println!("  - {}", failure);
+                    }
+                }
+                println!("=========================");
+            } else {
+                // Use standard mode (current behavior)
+                let html_text = browser_client.load_url(url).await.unwrap();
+                let document = Html::parse_document(&html_text);
+                let content = get_content(&document).unwrap();
+                println!("Content:\n{}", content);
+            }
         }
         Commands::BotTest {
             output,
