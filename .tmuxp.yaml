@@ -6,18 +6,23 @@ windows:
     start-directory: ./
     panes:
       - shell_command:
-        - hx
-  - window_name: cmd
+        - helix
+  - window_name: agent
+    start-directory: ./
+    panes:
+      - shell_command:
+        - crush
+  - window_name: cmd1
     start-directory: ./
     panes:
       - shell_command:
         - clear
-  - window_name: srv
+  - window_name: cmd2
     start-directory: ./
     panes:
       - shell_command:
         - clear
-  - window_name: notes
+  - window_name: yazi
     panes:
       - shell_command:
-        - emacs -nw notes.org
+        - yazi

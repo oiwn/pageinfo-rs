@@ -11,9 +11,9 @@ Cargo.lock
 
 # Added by cargo
 /target
+/tmp
 
 # project
 .amc.toml
-pageinfo_*.txt
 *.png
 CLAUDE.md
