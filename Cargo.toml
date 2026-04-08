@@ -2,6 +2,16 @@
 name = "pageinfo-rs"
 version = "0.1.0"
 edition = "2024"
+description = "CLI tool that analyzes web pages and produces structured LLM-friendly output"
+license = "GPL-3.0"
+repository = "https://github.com/oiwn/pageinfo-rs"
+homepage = "https://github.com/oiwn/pageinfo-rs"
+documentation = "https://github.com/oiwn/pageinfo-rs"
+readme = "README.md"
+keywords = ["web", "scraper", "cli", "html", "analysis"]
+categories = ["command-line-utilities", "web-programming"]
+authors = ["oiwn"]
+rust-version = "1.85"
 
 [[bin]]
 name = "pginf"
@@ -11,22 +21,17 @@ path = "src/main.rs"
 name = "pageinfo_rs"
 path = "src/lib.rs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-clap = "4.6"
-comfy-table = "7.2.2"
+clap = { version = "4", features = ["derive"] }
+comfy-table = "7"
 dom-content-extraction = "0.3"
 futures = "0.3"
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.11.0"
-# spider_chrome = "2.37"
-# toml = "0.8"
-# spider_fingerprint = "2.37"
+sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-url = "2.5"
-wreq = "5.3"
-wreq-util = "2.2"
+url = "2"
+wreq = "5"
+wreq-util = "2"
