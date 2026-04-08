@@ -1,9 +1,8 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::error::Error;
-use std::path::PathBuf;
-
 mod analyzer;
 mod cache;
+mod help;
 mod html;
 mod http;
 
@@ -15,6 +14,7 @@ use crate::cache::Cache;
 #[command(author = "oiwn <https://github.org/oiwn>")]
 #[command(version = "0.1")]
 #[command(about = "CLI tool to research web pages", long_about = None)]
+#[command(disable_help_subcommand = true)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -22,39 +22,44 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Show built-in help for humans and LLM tools
+    Help {
+        /// Optional help topic: analyze, http, tool
+        topic: Option<String>,
+    },
     /// Load page using reqwest
     Http {
         /// URL to load
         #[arg(short, long)]
         url: String,
     },
-    /// Analyze a single page (link patterns, URL taxonomy, metadata)
-    Analyze {
-        /// URL to analyze
-        #[arg(short, long)]
-        url: String,
-        /// Ignore cache and do not write fetched page to cache
-        #[arg(long, conflicts_with = "refresh")]
-        no_cache: bool,
-        /// Refetch page and overwrite existing cache entry
-        #[arg(long)]
-        refresh: bool,
-    },
-    /// Sample multiple pages from a site and build aggregate statistics
-    Sample {
-        /// Seed URL to start from
-        #[arg(short, long)]
-        url: String,
-        /// Maximum number of pages to sample
-        #[arg(short, long, default_value = "5")]
-        max_pages: usize,
-        /// Concurrency limit for fetching
-        #[arg(short, long, default_value = "3")]
-        concurrency: usize,
-        /// Output directory for stored artifacts
-        #[arg(short, long, default_value = "/tmp/site-analyzer")]
-        output_dir: PathBuf,
-    },
+    /// Analyze a single page and inspect specific evidence views
+    Analyze(AnalyzeArgs),
+}
+
+#[derive(Args, Debug)]
+struct AnalyzeArgs {
+    #[command(subcommand)]
+    command: Option<AnalyzeCommand>,
+    /// URL to analyze
+    #[arg(short, long)]
+    url: String,
+    /// Ignore cache and do not write fetched page to cache
+    #[arg(long, conflicts_with = "refresh")]
+    no_cache: bool,
+    /// Refetch page and overwrite existing cache entry
+    #[arg(long)]
+    refresh: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum AnalyzeCommand {
+    /// Show link grouping and URL structure
+    Links,
+    /// Show curated metadata only
+    Meta,
+    /// Show structured-data / embedded JSON summary
+    Json,
 }
 
 #[tokio::main]
@@ -62,6 +67,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     match &cli.command {
+        Commands::Help { topic } => {
+            println!("{}", help::render(topic.as_deref()));
+        }
         Commands::Http { url } => {
             let parsed = url::Url::parse(url)?;
             match http::retrieve_page(&parsed).await {
@@ -83,21 +91,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        Commands::Analyze {
-            url,
-            no_cache,
-            refresh,
-        } => {
+        Commands::Analyze(args) => {
             let cache_config = cache::CacheConfig {
-                enabled: !no_cache,
-                refresh: *refresh,
+                enabled: !args.no_cache,
+                refresh: args.refresh,
                 ..cache::CacheConfig::default()
             };
             let cache = cache::FileCache::new(cache_config);
             cache.init()?;
             let client = wreq::Client::new();
-            let cache_key = cache.key_for_final_url(url)?;
-            let cached_page = if *no_cache || cache.should_refresh() {
+            let cache_key = cache.key_for_final_url(&args.url)?;
+            let cached_page = if args.no_cache || cache.should_refresh() {
                 None
             } else {
                 cache.load(&cache_key)?
@@ -106,8 +110,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Some(cached) => analyzer::PageInfo::from_cached_page(cached),
                 None => {
                     let cached =
-                        analyzer::PageInfo::fetch_raw(url, &client).await?;
-                    if !*no_cache {
+                        analyzer::PageInfo::fetch_raw(&args.url, &client).await?;
+                    if !args.no_cache {
                         cache.store(cached.clone())?;
                     }
                     analyzer::PageInfo::from_cached_page(cached)
@@ -115,34 +119,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             };
             match page {
                 Ok(page) => {
-                    println!("{}", page.format_for_llm());
+                    let output = match args.command {
+                        Some(AnalyzeCommand::Links) => page.format_links_for_llm(),
+                        Some(AnalyzeCommand::Meta) => page.format_meta_for_llm(),
+                        Some(AnalyzeCommand::Json) => page.format_json_for_llm(),
+                        None => page.format_for_llm(),
+                    };
+                    println!("{output}");
                 }
                 Err(e) => {
                     eprintln!("Analysis failed: {}", e);
-                }
-            }
-        }
-        Commands::Sample {
-            url,
-            max_pages,
-            concurrency,
-            output_dir,
-        } => {
-            let client = wreq::Client::new();
-            let options = analyzer::SampleOptions {
-                max_pages: *max_pages,
-                concurrency: *concurrency,
-            };
-            match analyzer::SampleCollector::collect(
-                url, options, &client, output_dir,
-            )
-            .await
-            {
-                Ok(collector) => {
-                    println!("{}", collector.format_for_llm());
-                }
-                Err(e) => {
-                    eprintln!("Sampling failed: {}", e);
                 }
             }
         }
@@ -157,6 +143,18 @@ mod tests {
     use clap::error::ErrorKind;
 
     #[test]
+    fn help_accepts_topic() {
+        let cli = Cli::try_parse_from(["pginf", "help", "tool"]).unwrap();
+
+        match cli.command {
+            Commands::Help { topic } => {
+                assert_eq!(topic.as_deref(), Some("tool"));
+            }
+            _ => panic!("expected help command"),
+        }
+    }
+
+    #[test]
     fn analyze_accepts_no_cache_flag() {
         let cli = Cli::try_parse_from([
             "pginf",
@@ -168,9 +166,9 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Commands::Analyze {
+            Commands::Analyze(AnalyzeArgs {
                 no_cache, refresh, ..
-            } => {
+            }) => {
                 assert!(no_cache);
                 assert!(!refresh);
             }
@@ -190,9 +188,9 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Commands::Analyze {
+            Commands::Analyze(AnalyzeArgs {
                 no_cache, refresh, ..
-            } => {
+            }) => {
                 assert!(!no_cache);
                 assert!(refresh);
             }
@@ -213,5 +211,30 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn analyze_accepts_links_subcommand() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "analyze",
+            "-u",
+            "https://example.com",
+            "links",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Analyze(AnalyzeArgs { command, .. }) => {
+                assert!(matches!(command, Some(AnalyzeCommand::Links)));
+            }
+            _ => panic!("expected analyze command"),
+        }
+    }
+
+    #[test]
+    fn help_tool_mentions_analyze_as_first_step() {
+        let text = help::render(Some("tool"));
+        assert!(text.contains("Run `pginf analyze -u <URL>` first."));
     }
 }

@@ -53,7 +53,7 @@ impl UrlFacts {
             BTreeMap::new();
         let mut segments_by_depth: BTreeMap<usize, Vec<Vec<String>>> =
             BTreeMap::new();
-        let mut utility_urls: Vec<String> = Vec::new();
+        let mut utility_urls: HashSet<String> = HashSet::new();
 
         for link in &internal {
             let Ok(parsed) = url::Url::parse(&link.url) else {
@@ -78,7 +78,7 @@ impl UrlFacts {
             }
 
             if is_utility_url(&segments) {
-                utility_urls.push(link.url.clone());
+                utility_urls.insert(link.url.clone());
             }
 
             segments_by_depth.entry(depth).or_default().push(segments);
@@ -93,10 +93,14 @@ impl UrlFacts {
                 .into_iter()
                 .map(|(k, set)| {
                     let mut v: Vec<String> = set.into_iter().collect();
+                    v.sort();
                     v.truncate(MAX_URL_SAMPLES_PER_SECTION);
                     (k, v)
                 })
                 .collect();
+        let mut likely_utility_urls: Vec<String> =
+            utility_urls.into_iter().collect();
+        likely_utility_urls.sort();
 
         Self {
             total_internal,
@@ -105,12 +109,8 @@ impl UrlFacts {
             top_first_segments,
             url_samples_by_section,
             date_positions,
-            likely_utility_urls: utility_urls,
+            likely_utility_urls,
         }
-    }
-
-    pub fn merge<'a>(facts: Vec<&'a UrlFacts>) -> AggregateBuilder<'a> {
-        AggregateBuilder::new(facts)
     }
 
     pub fn detected_url_pattern(&self) -> Option<String> {
@@ -169,87 +169,6 @@ impl UrlFacts {
         }
 
         None
-    }
-}
-
-pub struct AggregateBuilder<'a> {
-    facts: Vec<&'a UrlFacts>,
-}
-
-impl<'a> AggregateBuilder<'a> {
-    pub fn new(facts: Vec<&'a UrlFacts>) -> Self {
-        AggregateBuilder { facts }
-    }
-
-    pub fn total_urls_seen(&self) -> usize {
-        self.facts
-            .iter()
-            .map(|f| f.total_internal + f.total_external)
-            .sum()
-    }
-
-    pub fn depth_distribution(&self) -> BTreeMap<usize, usize> {
-        let mut merged: BTreeMap<usize, usize> = BTreeMap::new();
-        for f in &self.facts {
-            for (&depth, &count) in &f.depth_distribution {
-                *merged.entry(depth).or_insert(0) += count;
-            }
-        }
-        merged
-    }
-
-    pub fn top_first_segments(&self) -> Vec<(String, usize)> {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for f in &self.facts {
-            for (seg, count) in &f.top_first_segments {
-                *counts.entry(seg.clone()).or_insert(0) += *count;
-            }
-        }
-        top_by_count(&counts, MAX_TOP_SEGMENTS)
-    }
-
-    pub fn url_samples_by_section(&self) -> BTreeMap<String, Vec<String>> {
-        let mut merged: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for f in &self.facts {
-            for (section, samples) in &f.url_samples_by_section {
-                let entry = merged.entry(section.clone()).or_default();
-                for url in samples {
-                    if entry.len() < MAX_URL_SAMPLES_PER_SECTION
-                        && !entry.contains(url)
-                    {
-                        entry.push(url.clone());
-                    }
-                }
-            }
-        }
-        merged
-    }
-
-    pub fn date_positions(&self) -> Vec<(usize, DateKind)> {
-        let mut seen: HashSet<(usize, DateKind)> = HashSet::new();
-        let mut result = Vec::new();
-        for f in &self.facts {
-            for &(pos, kind) in &f.date_positions {
-                if seen.insert((pos, kind)) {
-                    result.push((pos, kind));
-                }
-            }
-        }
-        result.sort_by_key(|(pos, _)| *pos);
-        result
-    }
-
-    pub fn utility_urls(&self) -> Vec<String> {
-        let mut seen: HashSet<String> = HashSet::new();
-        let mut result = Vec::new();
-        for f in &self.facts {
-            for url in &f.likely_utility_urls {
-                if seen.insert(url.clone()) {
-                    result.push(url.clone());
-                }
-            }
-        }
-        result
     }
 }
 

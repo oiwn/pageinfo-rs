@@ -18,13 +18,3 @@ impl fmt::Display for DateKind {
         }
     }
 }
-
-pub fn classify_segment(segment: &str) -> Option<DateKind> {
-    if segment.len() == 4 && segment.chars().all(|c| c.is_ascii_digit()) {
-        let year: u32 = segment.parse().ok()?;
-        if (1900..=2100).contains(&year) {
-            return Some(DateKind::Year);
-        }
-    }
-    None
-}
