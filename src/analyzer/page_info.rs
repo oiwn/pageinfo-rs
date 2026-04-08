@@ -7,6 +7,7 @@ use crate::analyzer::error::AnalyzerError;
 use crate::analyzer::link::{self, Link};
 use crate::analyzer::meta_tag::MetaTag;
 use crate::analyzer::url_facts::UrlFacts;
+use crate::cache::CachedPage;
 
 #[derive(Debug, Clone)]
 pub struct PageInfo {
@@ -24,10 +25,10 @@ pub struct PageInfo {
 }
 
 impl PageInfo {
-    pub async fn fetch(
+    pub async fn fetch_raw(
         url: &str,
         client: &wreq::Client,
-    ) -> Result<Self, AnalyzerError> {
+    ) -> Result<CachedPage, AnalyzerError> {
         let parsed = Url::parse(url)
             .map_err(|e| AnalyzerError::InvalidUrl(e.to_string()))?;
 
@@ -48,28 +49,66 @@ impl PageInfo {
         }
 
         let final_url = response.url().to_string();
-        let domain = link::extract_registered_domain(&parsed)
-            .unwrap_or_else(|| parsed.host_str().unwrap_or("unknown").to_string());
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(k, v)| {
+                (k.to_string(), v.to_str().unwrap_or("<invalid>").to_string())
+            })
+            .collect();
 
         let body = response.text().await.map_err(|_| AnalyzerError::Parse {
             url: url.to_string(),
             reason: "failed to read response body".to_string(),
         })?;
 
-        let document = Html::parse_document(&body);
+        let cache =
+            crate::cache::FileCache::new(crate::cache::CacheConfig::default());
+        cache
+            .cache_page(url, &final_url, status, headers, body)
+            .map_err(|e| AnalyzerError::Parse {
+                url: url.to_string(),
+                reason: e.to_string(),
+            })
+    }
 
+    pub async fn fetch(
+        url: &str,
+        client: &wreq::Client,
+    ) -> Result<Self, AnalyzerError> {
+        let cached = Self::fetch_raw(url, client).await?;
+        Self::from_cached_page(cached)
+    }
+
+    pub fn from_cached_page(cached: CachedPage) -> Result<Self, AnalyzerError> {
+        Self::from_raw_html(
+            &cached.fetch.input_url,
+            &cached.fetch.final_url,
+            cached.fetch.status,
+            cached.html,
+        )
+    }
+
+    fn from_raw_html(
+        input_url: &str,
+        final_url: &str,
+        status: u16,
+        body: String,
+    ) -> Result<Self, AnalyzerError> {
+        let parsed = Url::parse(final_url)
+            .map_err(|e| AnalyzerError::InvalidUrl(e.to_string()))?;
+        let domain = link::extract_registered_domain(&parsed)
+            .unwrap_or_else(|| parsed.host_str().unwrap_or("unknown").to_string());
+        let document = Html::parse_document(&body);
         let title = extract_title(&document);
         let lang = extract_lang(&document);
         let meta = extract_meta(&document);
-        let base_url = parsed.clone();
-        let links = link::extract_links(&document, &base_url);
+        let links = link::extract_links(&document, &parsed);
         let url_facts = UrlFacts::from_links(&links, &domain);
-
         let text_content = dom_content_extraction::get_content(&document).ok();
-
         Ok(PageInfo {
-            url: url.to_string(),
-            final_url,
+            url: input_url.to_string(),
+            final_url: final_url.to_string(),
             domain,
             status,
             title,

@@ -1,146 +1,205 @@
-# pageinfo-rs — Project Overview
+## Current Direction
 
-**Purpose:** CLI tool that analyzes web pages and produces structured output
-(LLM-friendly) so an LLM agent can generate crawler configs without manually
-inspecting the site.
+The project should optimize for one job:
 
-HTTP only. No browser automation.
+- help an LLM research a site well enough to build or adapt a crawler
 
----
+Per-site config generation is one example of that job, not the whole product.
 
-## CLI Commands
+This means the tool should not try to decide too much on its own. It should:
 
-| Command | Description |
-|---|---|
-| `analyze -u <URL>` | Fetch single URL, extract links/metadata/URL patterns |
-| `sample -u <URL> [-m N] [-c N] [-o DIR]` | Fetch seed + sample pages, build aggregate stats, persist artifacts |
-| `http -u <URL>` | Raw HTTP transaction dump (request/response/timing) |
+- fetch page data reliably
+- expose structural signals clearly
+- keep output compact and readable
+- preserve enough raw evidence for the LLM to reason by itself
 
----
+The `analyze` command should become the primary LLM-facing command first.
 
-## Source Layout
+## Scope of This Document
 
-```
-src/
-  lib.rs                          — pub mod html, http, analyzer
-  main.rs                         — CLI entry (clap)
+This file focuses on `analyze`.
 
-  http.rs                         — HttpTransaction, retrieve_page() via wreq
-  html.rs                         — Legacy PageInfo (title/meta only, used by Http command)
+Caching is a separate component and is specified in:
 
-  analyzer/
-    mod.rs                        — Re-exports: PageInfo, SampleCollector, SampleOptions
-    error.rs                      — AnalyzerError enum (Fetch, Parse, InvalidUrl, Io)
-    meta_tag.rs                   — MetaTag { name, content }
-    link.rs                       — Link struct + extract_links() from HTML
-    date_kind.rs                  — DateKind enum + classify_segment()
-    url_facts.rs                  — UrlFacts::from_links(), URL pattern detection, AggregateBuilder
-    page_info.rs                  — analyzer::PageInfo::fetch() + format_for_llm() with comfy-table
-    aggregate.rs                  — AggregateUrlFacts + cross-page merge
-    sample_options.rs             — SampleOptions { max_pages, concurrency }
-    sample_collector.rs           — SampleCollector::collect(), storage, format_for_llm()
-```
+- `specs/cache.md`
 
----
+Detailed ideas about future output shapes can move into:
 
-## Data Flow
+- `specs/idea.md`
 
-### `analyze` command
+## Product Principles
 
-```
-URL → wreq GET → HTML parse (dom-content-extraction/scraper)
-  → extract title, lang, meta tags
-  → extract main content text via dom-content-extraction CETD algorithm
-  → extract all <a href> links → resolve to absolute URLs
-  → UrlFacts::from_links() → section grouping, depth distribution, date detection
-  → format_for_llm() → comfy-table output
-```
+- Prefer evidence over strong built-in heuristics.
+- Keep output compact and LLM-readable.
+- Make commands granular so an LLM can ask follow-up questions with tools.
+- Separate raw data collection from presentation.
+- Keep enough raw content and page structure for the LLM to inspect directly.
 
-### `sample` command
+## Analyze Command Goal
 
-```
-Seed URL → analyzer::PageInfo::fetch()
-  → collect internal links → group by first path segment
-  → pick one URL per group (prefer date-like paths) up to max_pages
-  → fetch concurrently (semaphore for concurrency limit)
-  → AggregateUrlFacts::from_page_facts() — merge across all pages
-  → persist: raw HTML, page JSON, aggregate JSON, report.md via tokio::fs
-```
+`analyze` should stop behaving like a mixed debug dump and become a focused page research tool.
 
----
+The main job of `analyze` is to expose:
 
-## Key Data Structures
+- what kinds of internal URLs exist on the page
+- what kinds of content the page appears to link to
+- what structured data exists in the page source
+- what page-level metadata may help crawler construction
 
-### analyzer::PageInfo
+## Desired Output Characteristics
 
-Fetched page with full analysis. Fields: `url`, `final_url`, `domain`, `status`,
-`title`, `lang`, `meta: Vec<MetaTag>`, `links: Vec<Link>`, `url_facts: UrlFacts`,
-`raw_html`, `text_content: Option<String>`.
+- concise markdown
+- stable ordering
+- deduplicated URLs where possible
+- enough raw evidence for the LLM to apply its own heuristics
+- easy to inspect manually when needed
 
-### UrlFacts
+## Keep
 
-Computed from internal links on a page:
+- extracted content
+- URL samples
+- raw structural evidence useful for reasoning
 
-- `total_internal` / `total_external` — link counts
-- `depth_distribution` — path depth histogram
-- `top_first_segments` — most common first path segments (top 20)
-- `url_samples_by_section` — actual URL path samples per section (up to 8 unique)
-- `date_positions` — detected Year/Month/Day positions in URL paths
-- `likely_utility_urls` — URLs matching utility keywords (about, privacy, terms, etc.)
-- `detected_url_pattern()` — infers article URL pattern like `/{section}/{year}/{month}/{day}/{slug}`
+The extracted content should stay available because the LLM may need it to distinguish article pages from service pages or utility pages.
 
-### Date Detection
+## Remove or Reduce
 
-Contextual: finds Year positions first (4-digit, 1900-2100), then checks
-adjacent positions for Month (1-12) and Day (1-31) ranges. Avoids ambiguity
-between month/day by using position relative to detected year.
+- noisy meta tags
+- duplicated URLs
+- presentation that mixes debugging detail with crawler-relevant information
 
-### Link
+## Add or Improve
 
-`{ url, text, rel, is_internal }`. Internal means same registered domain
-(e.g. "coindesk.com" from "www.coindesk.com").
+- better URL deduplication and normalization
+- clearer grouping of internal URLs
+- visibility into embedded JSON and structured data blobs
+- feed detection
+- better coverage of URL shapes on the page
 
-### AggregateUrlFacts
+## Working Direction for `analyze`
 
-Merged UrlFacts across multiple pages: summed counts, unioned URL samples
-(deduped), unioned utility URLs.
+The tool should lean toward collecting and presenting evidence, not overfitting heuristics.
 
----
+Examples of useful evidence:
 
-## Output Format
+- grouped internal URLs
+- path depth distribution
+- repeated path shapes
+- query parameter examples
+- anchor text samples
+- curated metadata
+- JSON-LD or other embedded structured data
+- detected feed URLs
+- extracted content
 
-All output uses `comfy-table` (UTF8_FULL_CONDENSED preset) for tables.
+Examples of things the LLM can infer from that evidence:
 
-Sections in `analyze` output:
-1. **Header table** — URL, final URL, status, title, lang
-2. **Links** — internal/external count
-3. **Meta Tags** — property/content table
-4. **URL Patterns** — detected article pattern + section table (section name, link count, sample URLs)
-5. **Path Depth** — depth/count table
-6. **Utility URLs** — list
-7. **Extracted Content** — main body text (CETD algorithm)
+- article URL patterns
+- likely editorial sections
+- likely blacklist targets
+- regexes or templates for crawler rules
 
-`sample` output: aggregate header + same structure, then per-page sections.
+## Staged Plan
 
----
+### Stage 1: Clean Up `analyze`
 
-## Dependencies
+Scope: improve the current `analyze` command without redesigning the whole CLI.
 
-| Crate | Role |
-|---|---|
-| `wreq` | HTTP client (not reqwest) |
-| `comfy-table` | Terminal table rendering |
-| `dom-content-extraction` | HTML parsing (re-exports scraper) + content extraction via CETD |
-| `serde` / `serde_json` | Serialization |
-| `sha2` | URL hashing for storage keys |
-| `tokio` | Async runtime |
-| `url` | URL parsing |
-| `clap` | CLI argument parsing |
-| `thiserror` | Error types |
+Tasks:
 
----
+1. Deduplicate URLs consistently.
+   Use URL-aware normalization where possible.
 
-## Specs
+2. Keep extracted content, but ensure it is presented intentionally rather than as a noisy dump.
 
-- `specs/idea.md` — Original design specification
-- `specs/ctx.md` — Implementation plan and context (partially stale, check against actual code)
+3. Filter meta tags down to high-signal fields.
+
+4. Detect and surface feed-like URLs explicitly.
+
+5. Improve URL grouping so the report gives better coverage of page structure.
+
+6. Expose embedded JSON and structured data in the page source.
+
+The focus of this stage is better evidence, not more opinionated inference.
+
+### Stage 2: Split Analysis Into More Granular Commands or Views
+
+The current CLI is still too coarse for tool-driven LLM usage.
+
+We likely need narrower ways to inspect the same page without rerunning one large report.
+
+Candidate directions:
+
+- `analyze page -u <URL>`
+  General page summary
+
+- `analyze links -u <URL>`
+  Internal URL inventory grouped by shape, section, or depth
+
+- `analyze metadata -u <URL>`
+  Curated metadata and page-level signals
+
+- `analyze json -u <URL>`
+  JSON-LD, hydration blobs, embedded application state, and other structured payloads
+
+Exact CLI shape is still open. This may become subcommands, flags, or alternate views.
+
+### Stage 3: Use Cache Through `analyze`
+
+Cache design lives in `specs/cache.md`.
+
+For `analyze`, the intended behavior is:
+
+- use local cache by default
+- allow refresh when needed
+- keep cached pages inspectable by both the user and the LLM
+
+At this stage the cache only needs to support `analyze`.
+
+### Stage 4: Revisit Sampling Later
+
+Sampling is not the priority right now.
+
+The current direction is to make `analyze` good enough that an LLM can do follow-up reasoning itself. We can revisit `sample` later if real usage shows that one-page evidence is insufficient.
+
+## Notes on Heuristics
+
+Heuristics should support the LLM, not replace it.
+
+Good heuristics:
+
+- deduplication
+- stable grouping
+- feed detection
+- extraction of structured data types
+- URL bucketing for better coverage
+
+More aggressive heuristics should be optional or deferred when the LLM can infer the answer from presented evidence.
+
+If bucketing or similarity clustering becomes important, using a string-similarity crate may help group related URL shapes.
+
+## Immediate Implementation Order
+
+Short-term order for code changes:
+
+1. refactor `analyze` output shape
+2. deduplicate and normalize URLs better
+3. filter metadata
+4. expose feeds explicitly
+5. expose embedded JSON / structured data
+6. improve URL grouping / bucketing
+7. wire `analyze` into cache
+
+## Open Questions
+
+- Should `analyze` stay markdown-only for now, or later also expose machine-readable JSON?
+  Current direction: markdown is enough for now.
+
+- Should the tool generate regex candidates itself?
+  Current direction: no, prefer exposing evidence so the LLM can generate them.
+
+- Should cache be used only by `analyze` initially?
+  Current direction: yes.
+
+- Should granularity be implemented as subcommands or alternate views?
+  Still open.

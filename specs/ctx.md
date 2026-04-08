@@ -1,2 +1,2 @@
-# Site Analyzer — Implementation Context
+# Current Task Context
 
