@@ -8,6 +8,7 @@ use crate::analyzer::link;
 use crate::analyzer::meta_tag::MetaTag;
 use crate::analyzer::url_facts::UrlFacts;
 use crate::cache::CachedPage;
+use crate::client::ClientError;
 
 #[derive(Debug, Clone)]
 pub struct StructuredDataSummary {
@@ -33,49 +34,22 @@ pub struct PageInfo {
 impl PageInfo {
     pub async fn fetch_raw(
         url: &str,
-        client: &wreq::Client,
+        client: &crate::client::PageClient,
     ) -> Result<CachedPage, AnalyzerError> {
-        let parsed = Url::parse(url)
-            .map_err(|e| AnalyzerError::InvalidUrl(e.to_string()))?;
-
-        let response = client.get(parsed.clone()).send().await.map_err(|_| {
-            AnalyzerError::Fetch {
-                url: url.to_string(),
-                status: 0,
+        client.fetch(url).await.map_err(|e| match e {
+            ClientError::Fetch { url, status } => {
+                AnalyzerError::Fetch { url, status }
             }
-        })?;
-
-        let status = response.status().as_u16();
-
-        if !response.status().is_success() {
-            return Err(AnalyzerError::Fetch {
-                url: url.to_string(),
-                status,
-            });
-        }
-
-        let final_url = response.url().to_string();
-        let headers = response
-            .headers()
-            .iter()
-            .map(|(k, v)| {
-                (k.to_string(), v.to_str().unwrap_or("<invalid>").to_string())
-            })
-            .collect();
-
-        let body = response.text().await.map_err(|_| AnalyzerError::Parse {
-            url: url.to_string(),
-            reason: "failed to read response body".to_string(),
-        })?;
-
-        let cache =
-            crate::cache::FileCache::new(crate::cache::CacheConfig::default());
-        cache
-            .cache_page(url, &final_url, status, headers, body)
-            .map_err(|e| AnalyzerError::Parse {
-                url: url.to_string(),
-                reason: e.to_string(),
-            })
+            ClientError::Request { url, reason } => {
+                AnalyzerError::Parse { url, reason }
+            }
+            ClientError::InvalidUrl(msg) => AnalyzerError::InvalidUrl(msg),
+            ClientError::InvalidProxy(msg) => AnalyzerError::InvalidUrl(msg),
+            ClientError::UnknownBrowser(msg) => AnalyzerError::InvalidUrl(msg),
+            ClientError::AllAttemptsFailed { url, .. } => {
+                AnalyzerError::Fetch { url, status: 0 }
+            }
+        })
     }
 
     pub fn from_cached_page(cached: CachedPage) -> Result<Self, AnalyzerError> {
