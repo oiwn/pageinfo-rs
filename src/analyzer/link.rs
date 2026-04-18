@@ -80,3 +80,111 @@ fn is_multi_part_tld(parts: &[&str]) -> bool {
             Some("co" | "com" | "org" | "net" | "gov" | "ac" | "edu")
         )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_registered_domain_simple() {
+        let url = Url::parse("https://example.com/page").unwrap();
+        assert_eq!(extract_registered_domain(&url), Some("example.com".into()));
+    }
+
+    #[test]
+    fn extract_registered_domain_www() {
+        let url = Url::parse("https://www.example.com/page").unwrap();
+        assert_eq!(extract_registered_domain(&url), Some("example.com".into()));
+    }
+
+    #[test]
+    fn extract_registered_domain_multi_part_tld() {
+        let url = Url::parse("https://www.example.co.uk/page").unwrap();
+        assert_eq!(
+            extract_registered_domain(&url),
+            Some("example.co.uk".into())
+        );
+    }
+
+    #[test]
+    fn extract_registered_domain_multi_part_jp() {
+        let url = Url::parse("https://www.example.co.jp/page").unwrap();
+        assert_eq!(
+            extract_registered_domain(&url),
+            Some("example.co.jp".into())
+        );
+    }
+
+    #[test]
+    fn extract_registered_domain_no_host() {
+        let url = Url::parse("file:///path/to/file").unwrap();
+        assert_eq!(extract_registered_domain(&url), None);
+    }
+
+    #[test]
+    fn extract_links_basic() {
+        let html = r#"<html><body>
+            <a href="https://example.com/about">About Us</a>
+            <a href="https://other.com/page">External</a>
+        </body></html>"#;
+        let doc = Html::parse_document(html);
+        let base = Url::parse("https://example.com/").unwrap();
+        let links = extract_links(&doc, &base);
+
+        assert_eq!(links.len(), 2);
+        assert!(links[0].is_internal);
+        assert!(!links[1].is_internal);
+    }
+
+    #[test]
+    fn extract_links_resolves_relative() {
+        let html = r#"<html><body>
+            <a href="/about">About</a>
+            <a href="contact">Contact</a>
+        </body></html>"#;
+        let doc = Html::parse_document(html);
+        let base = Url::parse("https://example.com/").unwrap();
+        let links = extract_links(&doc, &base);
+
+        assert_eq!(links[0].url, "https://example.com/about");
+        assert_eq!(links[1].url, "https://example.com/contact");
+    }
+
+    #[test]
+    fn extract_links_text_and_rel() {
+        let html = r#"<html><body>
+            <a href="https://example.com" rel="nofollow">Click here</a>
+        </body></html>"#;
+        let doc = Html::parse_document(html);
+        let base = Url::parse("https://example.com/").unwrap();
+        let links = extract_links(&doc, &base);
+
+        assert_eq!(links[0].text.as_deref(), Some("Click here"));
+        assert_eq!(links[0].rel.as_deref(), Some("nofollow"));
+    }
+
+    #[test]
+    fn extract_links_empty_text() {
+        let html = r#"<html><body>
+            <a href="https://example.com">  </a>
+        </body></html>"#;
+        let doc = Html::parse_document(html);
+        let base = Url::parse("https://example.com/").unwrap();
+        let links = extract_links(&doc, &base);
+
+        assert!(links[0].text.is_none());
+    }
+
+    #[test]
+    fn extract_links_no_href_ignored() {
+        let html = r#"<html><body>
+            <a name="anchor">No href</a>
+            <a href="https://example.com">Has href</a>
+        </body></html>"#;
+        let doc = Html::parse_document(html);
+        let base = Url::parse("https://example.com/").unwrap();
+        let links = extract_links(&doc, &base);
+
+        assert_eq!(links.len(), 1);
+    }
+}

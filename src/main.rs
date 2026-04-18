@@ -2,9 +2,10 @@ use clap::{Args, Parser, Subcommand};
 use std::error::Error;
 mod analyzer;
 mod cache;
+mod client;
 mod help;
 mod html;
-mod http;
+mod http_display;
 
 use crate::cache::Cache;
 
@@ -18,6 +19,15 @@ use crate::cache::Cache;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    /// Proxy URL (e.g. socks5://user:pass@host:port)
+    #[arg(long, global = true)]
+    proxy: Option<String>,
+    /// Browser emulation name (e.g. chrome137, firefox, safari)
+    #[arg(long, global = true)]
+    browser: Option<String>,
+    /// Request timeout in seconds
+    #[arg(long, global = true)]
+    timeout: Option<u64>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -66,13 +76,27 @@ enum AnalyzeCommand {
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
+    let mut page_client = client::PageClient::builder();
+    if let Some(ref proxy) = cli.proxy {
+        page_client = page_client.proxy(proxy)?;
+    } else {
+        page_client = page_client.proxy_from_env();
+    }
+    if let Some(ref browser) = cli.browser {
+        page_client = page_client.browser(client::parse_browser(browser)?);
+    }
+    if let Some(secs) = cli.timeout {
+        page_client = page_client.timeout(std::time::Duration::from_secs(secs));
+    }
+    let page_client = page_client.build();
+
     match &cli.command {
         Commands::Help { topic } => {
             println!("{}", help::render(topic.as_deref()));
         }
         Commands::Http { url } => {
             let parsed = url::Url::parse(url)?;
-            match http::retrieve_page(&parsed).await {
+            match http_display::retrieve_page(&parsed, &page_client).await {
                 Ok(transaction) => {
                     println!("{}", transaction.format_for_llm());
 
@@ -99,7 +123,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             };
             let cache = cache::FileCache::new(cache_config);
             cache.init()?;
-            let client = wreq::Client::new();
             let cache_key = cache.key_for_final_url(&args.url)?;
             let cached_page = if args.no_cache || cache.should_refresh() {
                 None
@@ -110,7 +133,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Some(cached) => analyzer::PageInfo::from_cached_page(cached),
                 None => {
                     let cached =
-                        analyzer::PageInfo::fetch_raw(&args.url, &client).await?;
+                        analyzer::PageInfo::fetch_raw(&args.url, &page_client)
+                            .await?;
                     if !args.no_cache {
                         cache.store(cached.clone())?;
                     }
