@@ -168,3 +168,129 @@ fn headers_to_hashmap(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_transaction() -> HttpTransaction {
+        let mut req_headers = HashMap::new();
+        req_headers.insert("host".to_string(), "example.com".to_string());
+        let mut resp_headers = HashMap::new();
+        resp_headers.insert("content-type".to_string(), "text/html".to_string());
+
+        HttpTransaction {
+            request: HttpRequestInfo {
+                method: "GET".to_string(),
+                url: "https://example.com/".to_string(),
+                headers: req_headers,
+                body: None,
+            },
+            response: HttpResponseInfo {
+                status: 200,
+                headers: resp_headers,
+                body: "<html></html>".to_string(),
+                body_length: 13,
+            },
+            duration_ms: 42,
+        }
+    }
+
+    #[test]
+    fn format_for_llm_includes_all_sections() {
+        let tx = sample_transaction();
+        let out = tx.format_for_llm();
+
+        assert!(out.contains("=== HTTP TRANSACTION ==="));
+        assert!(out.contains("REQUEST:"));
+        assert!(out.contains("Method: GET"));
+        assert!(out.contains("https://example.com/"));
+        assert!(out.contains("RESPONSE:"));
+        assert!(out.contains("Status: 200"));
+        assert!(out.contains("42ms"));
+        assert!(out.contains("<html></html>"));
+        assert!(out.contains("========================"));
+    }
+
+    #[test]
+    fn format_for_llm_shows_header_count() {
+        let tx = sample_transaction();
+        let out = tx.format_for_llm();
+
+        assert!(out.contains("1 headers)"));
+    }
+
+    #[test]
+    fn format_for_llm_empty_body() {
+        let tx = HttpTransaction {
+            request: HttpRequestInfo {
+                method: "GET".to_string(),
+                url: "https://example.com/".to_string(),
+                headers: HashMap::new(),
+                body: None,
+            },
+            response: HttpResponseInfo {
+                status: 200,
+                headers: HashMap::new(),
+                body: String::new(),
+                body_length: 0,
+            },
+            duration_ms: 0,
+        };
+        let out = tx.format_for_llm();
+
+        assert!(out.contains("(empty)"));
+        assert!(out.contains("(no headers)"));
+    }
+
+    #[test]
+    fn builder_finish_constructs_transaction() {
+        let mut hdrs = wreq::header::HeaderMap::new();
+        hdrs.insert("content-type", "text/plain".parse().unwrap());
+
+        let tx = HttpTransactionBuilder::new("GET", "https://example.com/")
+            .request_headers_from_map(&HashMap::new())
+            .finish_with_parts(wreq::StatusCode::OK, hdrs, "hello".to_string(), 10);
+
+        assert_eq!(tx.request.method, "GET");
+        assert_eq!(tx.response.status, 200);
+        assert_eq!(tx.response.body, "hello");
+        assert_eq!(tx.response.body_length, 5);
+        assert_eq!(tx.duration_ms, 10);
+        assert_eq!(
+            tx.response.headers.get("content-type").unwrap(),
+            "text/plain"
+        );
+    }
+
+    #[test]
+    fn builder_with_request_body() {
+        let tx = HttpTransactionBuilder::new("POST", "https://example.com/")
+            .request_body(Some("data".to_string()))
+            .finish_with_parts(
+                wreq::StatusCode::OK,
+                wreq::header::HeaderMap::new(),
+                String::new(),
+                0,
+            );
+
+        assert_eq!(tx.request.body.as_deref(), Some("data"));
+    }
+
+    #[test]
+    fn format_headers_empty() {
+        let tx = sample_transaction();
+        let empty = HashMap::new();
+        let out = tx.format_headers(&empty);
+        assert_eq!(out, "    (no headers)");
+    }
+
+    #[test]
+    fn format_headers_present() {
+        let tx = sample_transaction();
+        let mut h = HashMap::new();
+        h.insert("x-test".to_string(), "value".to_string());
+        let out = tx.format_headers(&h);
+        assert!(out.contains("x-test: value"));
+    }
+}

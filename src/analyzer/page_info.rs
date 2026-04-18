@@ -437,3 +437,173 @@ fn detect_structured_data(document: &Html) -> StructuredDataSummary {
         kinds: kinds.into_iter().collect(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cache::{CachedFetch, CachedPage};
+
+    const FAKE_HTML: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="description" content="Test page description">
+    <meta name="robots" content="index, follow">
+    <meta property="og:type" content="article">
+    <meta name="viewport" content="width=device-width">
+    <title>Test Page Title</title>
+    <script type="application/ld+json">{"@type":"NewsArticle"}</script>
+</head>
+<body>
+    <nav>
+        <a href="/about">About</a>
+        <a href="/contact">Contact</a>
+    </nav>
+    <main>
+        <p>This is the main content of the test page. It has enough text for content extraction to work properly. We need multiple sentences to ensure the dom-content-extraction crate can find something meaningful here. The quick brown fox jumps over the lazy dog.</p>
+        <a href="https://example.com/news/article-1">First Article</a>
+        <a href="https://example.com/news/article-2">Second Article</a>
+        <a href="https://other.com/page">External Link</a>
+        <a href="/rss/feed.xml">RSS Feed</a>
+    </main>
+</body>
+</html>"#;
+
+    fn fake_cached_page() -> CachedPage {
+        CachedPage {
+            fetch: CachedFetch {
+                input_url: "https://example.com/".to_string(),
+                final_url: "https://example.com/".to_string(),
+                normalized_final_url: "example.com/".to_string(),
+                status: 200,
+                fetched_at: "0".to_string(),
+            },
+            headers: std::collections::HashMap::new(),
+            html: FAKE_HTML.to_string(),
+        }
+    }
+
+    #[test]
+    fn from_cached_page_extracts_title() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert_eq!(page.title.as_deref(), Some("Test Page Title"));
+    }
+
+    #[test]
+    fn from_cached_page_extracts_lang() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert_eq!(page.lang.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn from_cached_page_extracts_status() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert_eq!(page.status, 200);
+    }
+
+    #[test]
+    fn from_cached_page_extracts_domain() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert_eq!(page.domain, "example.com");
+    }
+
+    #[test]
+    fn from_cached_page_extracts_internal_links() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert!(page.url_facts.total_internal > 0);
+    }
+
+    #[test]
+    fn from_cached_page_extracts_external_links() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert!(page.url_facts.total_external > 0);
+    }
+
+    #[test]
+    fn from_cached_page_detects_feeds() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert!(!page.feeds.is_empty());
+        assert!(page.feeds.iter().any(|f| f.contains("/rss")));
+    }
+
+    #[test]
+    fn from_cached_page_detects_json_ld() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert!(page.structured_data.json_ld_count > 0);
+        assert!(page.structured_data.kinds.contains(&"json-ld".to_string()));
+    }
+
+    #[test]
+    fn from_cached_page_extracts_content() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert!(page.text_content.is_some());
+    }
+
+    #[test]
+    fn from_cached_page_meta_curated() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        assert!(page.meta.iter().any(|m| {
+            m.name.as_deref() == Some("description")
+                || m.name.as_deref() == Some("og:type")
+        }));
+    }
+
+    #[test]
+    fn format_for_llm_produces_output() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let out = page.format_for_llm();
+        assert!(out.contains("# Page Analysis: example.com"));
+        assert!(out.contains("Test Page Title"));
+    }
+
+    #[test]
+    fn format_links_for_llm_includes_sections() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let out = page.format_links_for_llm();
+        assert!(out.contains("## URL Groups") || out.contains("## Path Depth"));
+    }
+
+    #[test]
+    fn format_meta_for_llm_curated_only() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let out = page.format_meta_for_llm();
+        assert!(out.contains("description"));
+        assert!(!out.contains("viewport"));
+    }
+
+    #[test]
+    fn format_json_for_llm_shows_structured_data() {
+        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let out = page.format_json_for_llm();
+        assert!(out.contains("## Structured Data"));
+        assert!(out.contains("json-ld"));
+    }
+
+    #[test]
+    fn from_cached_page_invalid_url() {
+        let mut cp = fake_cached_page();
+        cp.fetch.final_url = "not a url".to_string();
+        assert!(PageInfo::from_cached_page(cp).is_err());
+    }
+
+    #[test]
+    fn empty_html_page() {
+        let cp = CachedPage {
+            fetch: CachedFetch {
+                input_url: "https://example.com/".to_string(),
+                final_url: "https://example.com/".to_string(),
+                normalized_final_url: "example.com/".to_string(),
+                status: 200,
+                fetched_at: "0".to_string(),
+            },
+            headers: std::collections::HashMap::new(),
+            html: "<html><body></body></html>".to_string(),
+        };
+        let page = PageInfo::from_cached_page(cp).unwrap();
+        assert!(page.title.is_none());
+        assert!(page.lang.is_none());
+        assert_eq!(page.url_facts.total_internal, 0);
+        assert_eq!(page.url_facts.total_external, 0);
+        assert!(page.feeds.is_empty());
+    }
+}

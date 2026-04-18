@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use thiserror::Error;
 use url::Url;
@@ -27,6 +28,7 @@ pub struct PageClient {
     browser: Option<wreq_util::Emulation>,
     fallback_browsers: Vec<wreq_util::Emulation>,
     max_retries: usize,
+    timeout: Duration,
 }
 
 impl Default for PageClient {
@@ -40,6 +42,7 @@ impl Default for PageClient {
                 wreq_util::Emulation::Safari18_5,
             ],
             max_retries: 3,
+            timeout: Duration::from_secs(30),
         }
     }
 }
@@ -107,7 +110,7 @@ impl PageClient {
         &self,
         browser: Option<wreq_util::Emulation>,
     ) -> Result<wreq::Client, ClientError> {
-        let mut builder = wreq::ClientBuilder::new();
+        let mut builder = wreq::ClientBuilder::new().timeout(self.timeout);
 
         if let Some(emulation) = browser {
             let opt = wreq_util::EmulationOption::builder()
@@ -231,6 +234,7 @@ pub struct PageClientBuilder {
     browser: Option<wreq_util::Emulation>,
     fallback_browsers: Vec<wreq_util::Emulation>,
     max_retries: usize,
+    timeout: Duration,
 }
 
 impl PageClientBuilder {
@@ -244,6 +248,7 @@ impl PageClientBuilder {
                 wreq_util::Emulation::Safari18_5,
             ],
             max_retries: 3,
+            timeout: Duration::from_secs(30),
         }
     }
 
@@ -286,12 +291,18 @@ impl PageClientBuilder {
         self
     }
 
+    pub fn timeout(mut self, d: Duration) -> Self {
+        self.timeout = d;
+        self
+    }
+
     pub fn build(self) -> PageClient {
         PageClient {
             proxy_url: self.proxy_url,
             browser: self.browser,
             fallback_browsers: self.fallback_browsers,
             max_retries: self.max_retries,
+            timeout: self.timeout,
         }
     }
 }
@@ -399,5 +410,158 @@ mod tests {
             status: 404,
         };
         assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn builder_custom_timeout() {
+        let client = PageClient::builder()
+            .timeout(Duration::from_secs(5))
+            .build();
+        assert_eq!(client.timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn parse_browser_chrome_alias() {
+        assert!(matches!(
+            parse_browser("chrome"),
+            Ok(wreq_util::Emulation::Chrome137)
+        ));
+    }
+
+    #[test]
+    fn build_wreq_client_default() {
+        let client = PageClient::builder().build();
+        let result = client.build_wreq_client(None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn build_wreq_client_with_browser() {
+        let client = PageClient::builder()
+            .browser(wreq_util::Emulation::Chrome131)
+            .build();
+        let result = client.build_wreq_client(client.browser);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn is_retryable_on_503() {
+        let err = ClientError::Fetch {
+            url: "http://x".into(),
+            status: 503,
+        };
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn is_retryable_on_connection_error() {
+        let err = ClientError::Request {
+            url: "http://x".into(),
+            reason: "connection refused".into(),
+        };
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn is_not_retryable_on_invalid_url() {
+        let err = ClientError::InvalidUrl("bad".into());
+        assert!(!is_retryable(&err));
+    }
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+
+    async fn spawn_server(
+        status: u16,
+        body: &str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let body = body.to_string();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+            let resp = format!(
+                "HTTP/1.1 {status} OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ =
+                tokio::io::AsyncWriteExt::write_all(&mut stream, resp.as_bytes())
+                    .await;
+        });
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
+    #[tokio::test]
+    async fn fetch_200_returns_cached_page() {
+        let (addr, _handle) =
+            spawn_server(200, "<html><body>hello</body></html>").await;
+        let client = PageClient::builder()
+            .timeout(Duration::from_secs(5))
+            .build();
+        let result = client.fetch(&addr).await;
+        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert_eq!(page.html, "<html><body>hello</body></html>");
+        assert_eq!(page.fetch.status, 200);
+        assert!(page.fetch.final_url.starts_with("http://127.0.0.1:"));
+    }
+
+    #[tokio::test]
+    async fn fetch_404_returns_error() {
+        let (addr, _handle) =
+            spawn_server(404, "<html><body>not found</body></html>").await;
+        let client = PageClient::builder()
+            .timeout(Duration::from_secs(5))
+            .build();
+        let result = client.fetch(&addr).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ClientError::Fetch { status, .. } => assert_eq!(status, 404),
+            other => panic!("expected Fetch error, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_invalid_url_returns_error() {
+        let client = PageClient::builder().build();
+        let result = client.fetch("not a url").await;
+        assert!(matches!(result, Err(ClientError::InvalidUrl(_))));
+    }
+
+    #[tokio::test]
+    async fn get_raw_200_returns_response() {
+        let (addr, _handle) = spawn_server(200, "ok").await;
+        let url = Url::parse(&addr).unwrap();
+        let client = PageClient::builder()
+            .timeout(Duration::from_secs(5))
+            .build();
+        let result = client.get_raw(&url).await;
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.status().as_u16(), 200);
+    }
+
+    #[tokio::test]
+    async fn fetch_connects_with_browser_emulation() {
+        let (addr, _handle) = spawn_server(200, "<html>ok</html>").await;
+        let client = PageClient::builder()
+            .browser(wreq_util::Emulation::Chrome131)
+            .timeout(Duration::from_secs(5))
+            .build();
+        let result = client.fetch(&addr).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn fetch_unreachable_returns_error() {
+        let client = PageClient::builder()
+            .timeout(Duration::from_millis(500))
+            .build();
+        let result = client.fetch("http://127.0.0.1:1/").await;
+        assert!(result.is_err());
     }
 }

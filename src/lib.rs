@@ -3,6 +3,6 @@ pub mod cache;
 pub mod client;
 pub mod help;
 pub mod html;
-pub mod http;
+pub mod http_display;
 
 pub use client::PageClient;

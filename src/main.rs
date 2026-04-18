@@ -5,7 +5,7 @@ mod cache;
 mod client;
 mod help;
 mod html;
-mod http;
+mod http_display;
 
 use crate::cache::Cache;
 
@@ -25,6 +25,9 @@ struct Cli {
     /// Browser emulation name (e.g. chrome137, firefox, safari)
     #[arg(long, global = true)]
     browser: Option<String>,
+    /// Request timeout in seconds
+    #[arg(long, global = true)]
+    timeout: Option<u64>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -82,6 +85,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let Some(ref browser) = cli.browser {
         page_client = page_client.browser(client::parse_browser(browser)?);
     }
+    if let Some(secs) = cli.timeout {
+        page_client = page_client.timeout(std::time::Duration::from_secs(secs));
+    }
     let page_client = page_client.build();
 
     match &cli.command {
@@ -90,7 +96,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Http { url } => {
             let parsed = url::Url::parse(url)?;
-            match http::retrieve_page(&parsed, &page_client).await {
+            match http_display::retrieve_page(&parsed, &page_client).await {
                 Ok(transaction) => {
                     println!("{}", transaction.format_for_llm());
 
