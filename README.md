@@ -112,6 +112,10 @@ pginf --timeout 60 analyze -u https://example.com
 | `--browser <NAME>` | Browser emulation: `chrome137`, `firefox`, `safari`, `edge`, `okhttp` |
 | `--timeout <SECS>` | Request timeout in seconds |
 
+## For LLMs
+
+An LLM tool skill is available at [`skills/pginf.md`](skills/pginf.md). Point your agent config to this file to enable `pginf` as a tool.
+
 ## Cache
 
 `analyze` caches fetched pages locally in `.pageinfo/`. Stored data: fetch metadata, response headers, raw HTML.

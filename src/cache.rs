@@ -5,6 +5,6 @@ mod types;
 
 pub use error::CacheError;
 pub use store::{Cache, FileCache};
-pub use types::{CacheConfig, CachedPage};
 #[cfg(test)]
 pub use types::CachedFetch;
+pub use types::{CacheConfig, CachedPage};
