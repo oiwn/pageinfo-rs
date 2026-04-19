@@ -4,9 +4,8 @@ Project architecture is in `specs/overview.md`. Read it first.
 
 ## Working on this project
 
-- Run `cargo fmt` after finishing any task that changes Rust code.
-- `cargo clippy --all-targets -- -D warnings` must pass when Rust code changed — fix before stopping.
-- `cargo test` after every change to Rust code.
+- Pre-commit hooks (`prek`) run `cargo fmt`, `cargo clippy`, `cargo test`, `typos`, and `gitleaks` on every commit. Fix hook failures before pushing.
+- You may still run `cargo fmt` / `cargo clippy` / `cargo test` manually during development, but it's not required before committing — hooks enforce it.
 - Skip cargo commands if no `.rs` or `Cargo.toml` files were modified.
 - Keep responses short — fit a single screen. No walls of text.
 - View file before editing. Match whitespace exactly.
