@@ -4,8 +4,6 @@ use std::time::Duration;
 use thiserror::Error;
 use url::Url;
 
-use crate::cache::CachedPage;
-
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error("fetch failed for {url}: HTTP {status}")]
@@ -20,6 +18,39 @@ pub enum ClientError {
     UnknownBrowser(String),
     #[error("all {attempts} attempts failed for {url}")]
     AllAttemptsFailed { url: String, attempts: usize },
+}
+
+#[derive(Debug, Clone)]
+pub struct FetchResult {
+    pub input_url: String,
+    pub final_url: String,
+    pub status: u16,
+    pub headers: HashMap<String, String>,
+    pub body: String,
+    pub duration_ms: u64,
+}
+
+impl FetchResult {
+    pub fn to_cached_page(&self) -> crate::cache::CachedPage {
+        use crate::cache::normalize_url;
+        let normalized_final_url = normalize_url(&self.final_url)
+            .unwrap_or_else(|_| self.final_url.clone());
+        let fetched_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs().to_string())
+            .unwrap_or_else(|_| "0".to_string());
+        crate::cache::CachedPage {
+            fetch: crate::cache::CachedFetch {
+                input_url: self.input_url.clone(),
+                final_url: self.final_url.clone(),
+                normalized_final_url,
+                status: self.status,
+                fetched_at,
+            },
+            headers: self.headers.clone(),
+            html: self.body.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -52,10 +83,11 @@ impl PageClient {
         PageClientBuilder::new()
     }
 
-    pub async fn fetch(&self, url: &str) -> Result<CachedPage, ClientError> {
+    pub async fn fetch(&self, url: &str) -> Result<FetchResult, ClientError> {
         let parsed =
             Url::parse(url).map_err(|e| ClientError::InvalidUrl(e.to_string()))?;
 
+        let start = std::time::Instant::now();
         let mut attempts = 0;
         let mut last_err = None;
         let mut browsers_to_try: Vec<Option<wreq_util::Emulation>> =
@@ -72,7 +104,10 @@ impl PageClient {
 
             let client = self.build_wreq_client(browser_opt)?;
             match self.do_fetch(&client, &parsed).await {
-                Ok(page) => return Ok(page),
+                Ok(mut result) => {
+                    result.duration_ms = start.elapsed().as_millis() as u64;
+                    return Ok(result);
+                }
                 Err(e) if is_retryable(&e) => {
                     last_err = Some(e);
                     continue;
@@ -97,7 +132,7 @@ impl PageClient {
     pub async fn get_raw(&self, url: &Url) -> Result<wreq::Response, ClientError> {
         let client = self.build_wreq_client(self.browser)?;
         client
-            .get(url.clone())
+            .get(url.as_str())
             .send()
             .await
             .map_err(|e| ClientError::Request {
@@ -110,13 +145,10 @@ impl PageClient {
         &self,
         browser: Option<wreq_util::Emulation>,
     ) -> Result<wreq::Client, ClientError> {
-        let mut builder = wreq::ClientBuilder::new().timeout(self.timeout);
+        let mut builder = wreq::Client::builder().timeout(self.timeout);
 
         if let Some(emulation) = browser {
-            let opt = wreq_util::EmulationOption::builder()
-                .emulation(emulation)
-                .build();
-            builder = builder.emulation(opt);
+            builder = builder.emulation(emulation);
         }
 
         if let Some(ref proxy_str) = self.proxy_url {
@@ -126,18 +158,20 @@ impl PageClient {
             builder = builder.proxy(proxy);
         }
 
-        builder.build().map_err(|e| ClientError::Request {
-            url: String::new(),
-            reason: e.to_string(),
-        })
+        builder
+            .build()
+            .map_err(|e: wreq::Error| ClientError::Request {
+                url: String::new(),
+                reason: e.to_string(),
+            })
     }
 
     async fn do_fetch(
         &self,
         client: &wreq::Client,
         url: &Url,
-    ) -> Result<CachedPage, ClientError> {
-        let response = client.get(url.clone()).send().await.map_err(|e| {
+    ) -> Result<FetchResult, ClientError> {
+        let response = client.get(url.as_str()).send().await.map_err(|e| {
             ClientError::Request {
                 url: url.to_string(),
                 reason: e.to_string(),
@@ -153,7 +187,7 @@ impl PageClient {
             });
         }
 
-        let final_url = response.url().to_string();
+        let final_url = response.uri().to_string();
         let headers: HashMap<String, String> = response
             .headers()
             .iter()
@@ -167,14 +201,14 @@ impl PageClient {
             reason: e.to_string(),
         })?;
 
-        let cache =
-            crate::cache::FileCache::new(crate::cache::CacheConfig::default());
-        cache
-            .cache_page(url.as_str(), &final_url, status, headers, body)
-            .map_err(|e| ClientError::Request {
-                url: url.to_string(),
-                reason: e.to_string(),
-            })
+        Ok(FetchResult {
+            input_url: url.to_string(),
+            final_url,
+            status,
+            headers,
+            body,
+            duration_ms: 0,
+        })
     }
 }
 
@@ -496,7 +530,7 @@ mod integration_tests {
     }
 
     #[tokio::test]
-    async fn fetch_200_returns_cached_page() {
+    async fn fetch_200_returns_fetch_result() {
         let (addr, _handle) =
             spawn_server(200, "<html><body>hello</body></html>").await;
         let client = PageClient::builder()
@@ -505,9 +539,10 @@ mod integration_tests {
         let result = client.fetch(&addr).await;
         assert!(result.is_ok());
         let page = result.unwrap();
-        assert_eq!(page.html, "<html><body>hello</body></html>");
-        assert_eq!(page.fetch.status, 200);
-        assert!(page.fetch.final_url.starts_with("http://127.0.0.1:"));
+        assert_eq!(page.body, "<html><body>hello</body></html>");
+        assert_eq!(page.status, 200);
+        assert!(page.final_url.starts_with("http://127.0.0.1:"));
+        assert!(page.duration_ms > 0);
     }
 
     #[tokio::test]

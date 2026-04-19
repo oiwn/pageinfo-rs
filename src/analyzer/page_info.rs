@@ -8,7 +8,7 @@ use crate::analyzer::link;
 use crate::analyzer::meta_tag::MetaTag;
 use crate::analyzer::url_facts::UrlFacts;
 use crate::cache::CachedPage;
-use crate::client::ClientError;
+use crate::client::{ClientError, FetchResult};
 
 #[derive(Debug, Clone)]
 pub struct StructuredDataSummary {
@@ -17,6 +17,7 @@ pub struct StructuredDataSummary {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PageInfo {
     pub url: String,
     pub final_url: String,
@@ -32,10 +33,11 @@ pub struct PageInfo {
 }
 
 impl PageInfo {
+    #[allow(dead_code)]
     pub async fn fetch_raw(
         url: &str,
         client: &crate::client::PageClient,
-    ) -> Result<CachedPage, AnalyzerError> {
+    ) -> Result<FetchResult, AnalyzerError> {
         client.fetch(url).await.map_err(|e| match e {
             ClientError::Fetch { url, status } => {
                 AnalyzerError::Fetch { url, status }
@@ -52,12 +54,22 @@ impl PageInfo {
         })
     }
 
-    pub fn from_cached_page(cached: CachedPage) -> Result<Self, AnalyzerError> {
+    pub fn from_fetch_result(result: &FetchResult) -> Result<Self, AnalyzerError> {
+        Self::from_raw_html(
+            &result.input_url,
+            &result.final_url,
+            result.status,
+            result.body.clone(),
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn from_cached_page(cached: &CachedPage) -> Result<Self, AnalyzerError> {
         Self::from_raw_html(
             &cached.fetch.input_url,
             &cached.fetch.final_url,
             cached.fetch.status,
-            cached.html,
+            cached.html.clone(),
         )
     }
 
@@ -95,6 +107,7 @@ impl PageInfo {
         })
     }
 
+    #[allow(dead_code)]
     pub fn format_for_llm(&self) -> String {
         let mut out = String::new();
 
@@ -226,6 +239,7 @@ impl PageInfo {
         out
     }
 
+    #[allow(dead_code)]
     fn format_header(&self) -> String {
         let mut header = Table::new();
         header.set_content_arrangement(ContentArrangement::Dynamic);
@@ -263,6 +277,7 @@ impl PageInfo {
         out
     }
 
+    #[allow(dead_code)]
     fn format_summary(&self) -> String {
         let mut out = String::new();
         out.push_str("\n## Summary\n");
@@ -298,6 +313,7 @@ impl PageInfo {
         out
     }
 
+    #[allow(dead_code)]
     fn format_content_for_llm(&self) -> String {
         let mut out = String::new();
         if let Some(ref text) = self.text_content {
@@ -306,6 +322,96 @@ impl PageInfo {
             out.push('\n');
         }
         out
+    }
+
+    pub fn format_text(&self, _as_markdown: bool) -> String {
+        match &self.text_content {
+            Some(text) => text.clone(),
+            None => "(no content extracted)".to_string(),
+        }
+    }
+
+    pub fn links_json(&self, inbound_only: bool, outbound_only: bool) -> String {
+        let facts = &self.url_facts;
+        let groups: Vec<serde_json::Value> = facts
+            .top_first_segments
+            .iter()
+            .map(|(section, count)| {
+                let samples: Vec<serde_json::Value> = facts
+                    .url_samples_by_section
+                    .get(section)
+                    .map(|urls| {
+                        urls.iter()
+                            .map(|u| serde_json::Value::String(u.clone()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                serde_json::json!({
+                    "section": section,
+                    "count": count,
+                    "samples": samples,
+                })
+            })
+            .collect();
+        let depth: Vec<serde_json::Value> = facts
+            .depth_distribution
+            .iter()
+            .map(|(d, c)| serde_json::json!([d, c]))
+            .collect();
+        let mut obj = serde_json::json!({
+            "url": self.final_url,
+            "total_internal": facts.total_internal,
+            "total_external": facts.total_external,
+            "groups": groups,
+            "depth_distribution": depth,
+            "utility_urls": facts.likely_utility_urls,
+        });
+        if inbound_only {
+            obj.as_object_mut().unwrap().remove("total_external");
+        }
+        if outbound_only {
+            obj.as_object_mut().unwrap().remove("total_internal");
+        }
+        serde_json::to_string_pretty(&obj).unwrap_or_default()
+    }
+
+    pub fn meta_json(&self) -> String {
+        let tags: Vec<serde_json::Value> = curated_meta(&self.meta)
+            .iter()
+            .map(|tag| {
+                serde_json::json!({
+                    "name": tag.name,
+                    "content": tag.content,
+                })
+            })
+            .collect();
+        let obj = serde_json::json!({
+            "url": self.final_url,
+            "title": self.title,
+            "lang": self.lang,
+            "tags": tags,
+        });
+        serde_json::to_string_pretty(&obj).unwrap_or_default()
+    }
+
+    pub fn json_data_json(&self) -> String {
+        let obj = serde_json::json!({
+            "url": self.final_url,
+            "json_ld_count": self.structured_data.json_ld_count,
+            "kinds": self.structured_data.kinds,
+        });
+        serde_json::to_string_pretty(&obj).unwrap_or_default()
+    }
+
+    pub fn text_json(&self, as_markdown: bool) -> String {
+        let content = self.format_text(as_markdown);
+        let obj = serde_json::json!({
+            "url": self.final_url,
+            "format": if as_markdown { "markdown" } else { "text" },
+            "content": content,
+            "content_length": content.len(),
+        });
+        serde_json::to_string_pretty(&obj).unwrap_or_default()
     }
 }
 
@@ -483,65 +589,76 @@ mod tests {
         }
     }
 
+    fn fake_fetch_result() -> crate::client::FetchResult {
+        crate::client::FetchResult {
+            input_url: "https://example.com/".to_string(),
+            final_url: "https://example.com/".to_string(),
+            status: 200,
+            headers: std::collections::HashMap::new(),
+            body: FAKE_HTML.to_string(),
+            duration_ms: 42,
+        }
+    }
+
     #[test]
     fn from_cached_page_extracts_title() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert_eq!(page.title.as_deref(), Some("Test Page Title"));
     }
 
     #[test]
     fn from_cached_page_extracts_lang() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert_eq!(page.lang.as_deref(), Some("en"));
     }
 
     #[test]
     fn from_cached_page_extracts_status() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert_eq!(page.status, 200);
     }
 
     #[test]
     fn from_cached_page_extracts_domain() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert_eq!(page.domain, "example.com");
     }
 
     #[test]
     fn from_cached_page_extracts_internal_links() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert!(page.url_facts.total_internal > 0);
     }
 
     #[test]
     fn from_cached_page_extracts_external_links() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert!(page.url_facts.total_external > 0);
     }
 
     #[test]
     fn from_cached_page_detects_feeds() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert!(!page.feeds.is_empty());
         assert!(page.feeds.iter().any(|f| f.contains("/rss")));
     }
 
     #[test]
     fn from_cached_page_detects_json_ld() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert!(page.structured_data.json_ld_count > 0);
         assert!(page.structured_data.kinds.contains(&"json-ld".to_string()));
     }
 
     #[test]
     fn from_cached_page_extracts_content() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert!(page.text_content.is_some());
     }
 
     #[test]
     fn from_cached_page_meta_curated() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         assert!(page.meta.iter().any(|m| {
             m.name.as_deref() == Some("description")
                 || m.name.as_deref() == Some("og:type")
@@ -550,7 +667,7 @@ mod tests {
 
     #[test]
     fn format_for_llm_produces_output() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         let out = page.format_for_llm();
         assert!(out.contains("# Page Analysis: example.com"));
         assert!(out.contains("Test Page Title"));
@@ -558,14 +675,14 @@ mod tests {
 
     #[test]
     fn format_links_for_llm_includes_sections() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         let out = page.format_links_for_llm();
         assert!(out.contains("## URL Groups") || out.contains("## Path Depth"));
     }
 
     #[test]
     fn format_meta_for_llm_curated_only() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         let out = page.format_meta_for_llm();
         assert!(out.contains("description"));
         assert!(!out.contains("viewport"));
@@ -573,7 +690,7 @@ mod tests {
 
     #[test]
     fn format_json_for_llm_shows_structured_data() {
-        let page = PageInfo::from_cached_page(fake_cached_page()).unwrap();
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         let out = page.format_json_for_llm();
         assert!(out.contains("## Structured Data"));
         assert!(out.contains("json-ld"));
@@ -583,7 +700,7 @@ mod tests {
     fn from_cached_page_invalid_url() {
         let mut cp = fake_cached_page();
         cp.fetch.final_url = "not a url".to_string();
-        assert!(PageInfo::from_cached_page(cp).is_err());
+        assert!(PageInfo::from_cached_page(&cp).is_err());
     }
 
     #[test]
@@ -599,11 +716,32 @@ mod tests {
             headers: std::collections::HashMap::new(),
             html: "<html><body></body></html>".to_string(),
         };
-        let page = PageInfo::from_cached_page(cp).unwrap();
+        let page = PageInfo::from_cached_page(&cp).unwrap();
         assert!(page.title.is_none());
         assert!(page.lang.is_none());
         assert_eq!(page.url_facts.total_internal, 0);
         assert_eq!(page.url_facts.total_external, 0);
         assert!(page.feeds.is_empty());
+    }
+
+    #[test]
+    fn from_fetch_result_extracts_title() {
+        let result = fake_fetch_result();
+        let page = PageInfo::from_fetch_result(&result).unwrap();
+        assert_eq!(page.title.as_deref(), Some("Test Page Title"));
+    }
+
+    #[test]
+    fn from_fetch_result_extracts_domain() {
+        let result = fake_fetch_result();
+        let page = PageInfo::from_fetch_result(&result).unwrap();
+        assert_eq!(page.domain, "example.com");
+    }
+
+    #[test]
+    fn from_fetch_result_invalid_url() {
+        let mut result = fake_fetch_result();
+        result.final_url = "not a url".to_string();
+        assert!(PageInfo::from_fetch_result(&result).is_err());
     }
 }

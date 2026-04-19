@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+const CACHE_DIR: &str = ".pginf";
+
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
     pub root_dir: PathBuf,
@@ -13,7 +15,7 @@ pub struct CacheConfig {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            root_dir: PathBuf::from(".pageinfo"),
+            root_dir: PathBuf::from(CACHE_DIR),
             enabled: true,
             refresh: false,
         }

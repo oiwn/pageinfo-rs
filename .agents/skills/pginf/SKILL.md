@@ -12,26 +12,13 @@ structure, metadata, and embedded data from a page without a browser.
 ## Commands
 
 ```
-pginf fetch <url>                           # fetch + cache, print HTTP metadata
-pginf fetch <url> --json                    # same, JSON output
-pginf fetch <url> --refresh                 # bypass cache, re-fetch
-pginf links <url>                           # URL groups, path depth, samples
-pginf links <url> --inbound                 # internal links only
-pginf links <url> --outbound                # external links only
-pginf links <url> --json
-pginf meta <url>                            # curated metadata (title, lang, meta tags)
-pginf meta <url> --json
-pginf json <url>                            # structured data (JSON-LD, Next.js, inline)
-pginf json <url> --json
-pginf text <url>                            # extracted text content (plain text)
-pginf text <url> --format markdown          # extracted content as markdown
-pginf text <url> --json
-pginf html <url>                            # full HTML
-pginf html <url> -s "div.article"           # elements matching CSS selector
-pginf http -u <url>                         # raw request/response debug
-pginf install skills local                  # install skill to <project>/.agents/skills/pginf/
-pginf install skills global                 # install skill to ~/.agents/skills/pginf/
-pginf help tool                             # built-in guide
+pginf analyze -u <url>           # full report
+pginf analyze -u <url> links     # URL groups and path depth
+pginf analyze -u <url> meta      # curated metadata only
+pginf analyze -u <url> json      # embedded structured/JSON data
+pginf analyze -u <url> --refresh # bypass cache, re-fetch
+pginf http -u <url>              # raw request/response debug
+pginf help tool                  # built-in guide
 ```
 
 ## Global flags
@@ -56,41 +43,50 @@ returns an unusual 4xx status or an "Access Denied" page.
 Available browser names: `chrome137`, `chrome136`, ..., `chrome100`, `firefox`,
 `safari`, `edge`, `okhttp`.
 
-## Output
+## Output sections
 
-All commands default to markdown output. Pass `--json` for machine-readable
-JSON output.
+**URL Groups** -- internal links grouped by first path segment, with link count
+and sample URLs. Use this to understand site sections and identify article vs
+non-article areas.
+
+**Path Depth** -- distribution of internal URL depths. Depth-5 paths with date
+segments (year/month/day) are typically articles.
+
+**Utility URLs** -- detected non-content URLs (privacy, terms, sitemaps, feeds,
+locale variants).
+
+**Structured Data** -- detected JSON-LD, Next.js data, and inline JSON payloads.
+
+**Curated Metadata** -- filtered high-signal meta tags (description, robots,
+og:type, article:section).
+
+**Detected article pattern** -- heuristic guess at the article URL pattern.
+Often incomplete (may show only one section). Derive the full pattern from the
+URL groups table instead.
 
 ## Caching
 
-Pages are cached in `.pginf/`. All commands auto-fetch and cache if the page
-is not already cached.
-
-- `--refresh`: refetch and overwrite cache entry
-- `--no-cache`: skip cache read/write entirely
-
-## Typical workflow
-
-1. `pginf fetch <url>` — load the page into cache, inspect HTTP metadata
-2. `pginf links <url>` — understand URL structure and site sections
-3. `pginf meta <url>` — inspect curated metadata
-4. `pginf json <url>` — check for structured data
-5. `pginf text <url>` — extract page content
+Results are cached in `.pageinfo/`. Use `--refresh` if the page may have
+changed.
 
 ## Library usage
 
 `PageClient` is the core HTTP client, usable from Rust:
 
 ```rust
-use pageinfo_rs::{PageClient, Emulation, FetchResult};
+use pageinfo_rs::{PageClient, Emulation};
 
 let client = PageClient::builder()
     .browser(Emulation::Chrome137)
     .build();
 
-let result: FetchResult = client.fetch("https://example.com").await?;
-// result.input_url, result.final_url, result.status, result.headers, result.body, result.duration_ms
+let cached_page = client.fetch("https://example.com").await?;
+// cached_page.html contains the raw HTML
+// cached_page.fetch.status is the HTTP status code
 ```
+
+`pageinfo_rs` re-exports `Emulation` and the `wreq_util` / `wreq` crates,
+so no extra direct dependencies are needed.
 
 Automatic browser fallback (Chrome136 → Firefox139 → Safari18.5) only
 triggers on 403/429/503. For WAFs using custom codes, set `.browser()`

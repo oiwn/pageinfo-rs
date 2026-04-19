@@ -14,28 +14,36 @@
 
 ### `PageClient` (`src/client.rs`)
 
-Single entry point for all HTTP fetching. Supports:
+Single entry point for all HTTP fetching. Returns `FetchResult` (no cache coupling). Supports:
 
 - proxy with inline auth and env var fallback
 - browser emulation via `wreq_util::Emulation` (TLS fingerprint + headers)
 - automatic fallback on 403/429/503/connection errors
 - configurable timeout
 
-Used by both `analyze` and `http` commands. Re-exported as `pageinfo_rs::PageClient` for library use.
+Re-exported as `pageinfo_rs::PageClient` and `pageinfo_rs::FetchResult` for library use.
 
-### `analyze` Command
+### `resolve_page()` (`src/resolve.rs`)
 
-Primary research command. Exposes:
+Shared helper used by all commands that need page data. Handles:
+- check cache → return if hit
+- fetch via `PageClient` if miss
+- store result in cache
+- return `ResolveOutput { fetch_result, from_cache }`
 
-- grouped internal URLs with depth and section info
-- curated metadata (description, robots, og:type, article:section, etc.)
-- feed detection (RSS, Atom, feed paths)
-- structured data (JSON-LD, Next.js data, inline JSON)
-- extracted text content
+### Commands
 
-Subcommands: `links`, `meta`, `json` for focused views.
+Top-level commands (no nesting):
 
-Integrates with file cache. Supports `--refresh` and `--no-cache`.
+- `fetch <url>` — fetch + cache, print HTTP metadata (status, headers, timing)
+- `links <url>` — URL groups, path depth, internal/external links
+- `meta <url>` — curated metadata (title, lang, description, og:type, etc.)
+- `json <url>` — structured data (JSON-LD, Next.js, inline JSON)
+- `text <url>` — extracted text content via dom-content-extraction
+- `html <url>` — raw HTML, optional CSS selector filter
+- `http <url>` — low-level HTTP debug (full request/response)
+
+All commands support `--json` for machine-readable output. Default is markdown.
 
 ### `http` Command
 
@@ -43,14 +51,17 @@ Low-level debug command showing full HTTP transaction (request/response headers,
 
 ### Cache (`src/cache/`)
 
-File-based page cache in `.pageinfo/`. Stores fetch metadata, response headers, raw HTML. Used by `analyze`.
+File-based page cache in `.pginf/`. Stores fetch metadata, response headers, raw HTML.
 
 ## Implementation Status
 
 ### Done
 
-- `analyze` with focused subcommands (`links`, `meta`, `json`)
-- `PageClient` with proxy, browser emulation, fallback, timeout
+- Flat command structure: `fetch`, `links`, `meta`, `json`, `text`, `html`, `http`
+- `--json` flag on all analysis commands
+- `PageClient` decoupled from cache (returns `FetchResult`)
+- `resolve_page()` shared helper for cache-or-fetch logic
+- `text` command with dom-content-extraction
 - Global CLI flags: `--proxy`, `--browser`, `--timeout`
 - File-based page cache with refresh/no-cache support
 - URL deduplication and normalization
@@ -59,21 +70,19 @@ File-based page cache in `.pageinfo/`. Stores fetch metadata, response headers, 
 - Structured data detection (JSON-LD, Next.js, inline JSON)
 - URL grouping by first path segment
 - Path depth distribution
-- Test coverage: ~82% line coverage
 
 ### Not Done Yet
 
-- Machine-readable JSON output for `analyze` (currently markdown only)
 - More granular URL bucketing / similarity clustering
 - Sampling across multiple pages
 - Better query parameter analysis
 - Anchor text sampling in URL groups
+- Markdown text extraction via DCE density tree
 
 ## Open Questions
 
-- Should `analyze` also expose JSON output? Current direction: markdown is enough for now.
 - Should the tool generate regex candidates itself? Current direction: no, expose evidence.
-- Should granularity be subcommands or flags? Currently subcommands.
+- Should `text --format markdown` use DCE density tree extraction? Needs upstream support.
 
 ## Specs
 

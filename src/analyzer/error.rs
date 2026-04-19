@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum AnalyzerError {
     #[error("fetch failed for {url}: HTTP {status}")]
     Fetch { url: String, status: u16 },

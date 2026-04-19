@@ -34,16 +34,18 @@ Binary name: `pginf`. Library crate: `pageinfo_rs`.
 `PageClient` is the core HTTP client. Usable from any async Rust code:
 
 ```rust
-use pageinfo_rs::PageClient;
+use pageinfo_rs::{PageClient, Emulation};
 
 let client = PageClient::builder()
     .proxy("socks5://user:pass@host:port")?
-    .browser(wreq_util::Emulation::Chrome137)
+    .browser(Emulation::Chrome137)
     .timeout(std::time::Duration::from_secs(30))
     .build();
 
 let cached_page = client.fetch("https://example.com").await?;
 ```
+
+`pageinfo_rs` re-exports `Emulation`, `wreq`, and `wreq_util` — no extra direct dependencies needed.
 
 Features:
 
@@ -85,6 +87,26 @@ Low-level HTTP debug command. Shows request/response headers, body, and timing.
 pginf http -u https://example.com
 ```
 
+### `html`
+
+Show HTML content, optionally filtered by CSS selector. Uses same cache as `analyze`.
+
+```bash
+pginf html -u https://example.com                    # full HTML
+pginf html -u https://example.com -s "div.article"   # elements matching selector
+pginf html -u https://example.com -s "h1, h2"        # multiple selectors
+pginf html -u https://example.com --no-cache         # fresh fetch
+```
+
+### `install`
+
+Install pginf skill files for AI coding agents.
+
+```bash
+pginf install skills local     # <project>/.agents/skills/pginf/SKILL.md
+pginf install skills global    # ~/.agents/skills/pginf/SKILL.md
+```
+
 ### `help`
 
 Built-in documentation.
@@ -114,11 +136,16 @@ pginf --timeout 60 analyze -u https://example.com
 
 ## For LLMs
 
-An LLM tool skill is available at [`skills/pginf.md`](skills/pginf.md). Point your agent config to this file to enable `pginf` as a tool.
+An LLM tool skill is available at [`skills/pginf.md`](skills/pginf.md). Install it with:
+
+```bash
+pginf install skills local     # project-local
+pginf install skills global    # user-level
+```
 
 ## Cache
 
-`analyze` caches fetched pages locally in `.pageinfo/`. Stored data: fetch metadata, response headers, raw HTML.
+`analyze` and `html` cache fetched pages locally in `.pginf/`. Stored data: fetch metadata, response headers, raw HTML.
 
 Cache behavior:
 
@@ -132,8 +159,9 @@ Cache behavior:
 src/
   client.rs          PageClient — HTTP fetching, proxy, browser emulation, fallback
   http_display.rs    HTTP transaction types and formatting (for `http` command)
+  skills.rs          Embedded skill file + install logic (for `install` command)
   analyzer/          Page analysis: link extraction, URL grouping, metadata, structured data
-  cache/             File-based page cache
+  cache/             File-based page cache (.pginf/)
   html.rs            Legacy page info extraction (used by `http` command)
   help.rs            Built-in help text
   main.rs            CLI entry point

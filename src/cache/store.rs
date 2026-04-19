@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::cache::error::CacheError;
 use crate::cache::key::CacheKey;
@@ -34,32 +33,6 @@ impl FileCache {
 
     pub fn should_refresh(&self) -> bool {
         self.config.refresh
-    }
-
-    pub fn cache_page(
-        &self,
-        input_url: &str,
-        final_url: &str,
-        status: u16,
-        headers: HashMap<String, String>,
-        html: String,
-    ) -> Result<CachedPage, CacheError> {
-        let fetched_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs().to_string())
-            .unwrap_or_else(|_| "0".to_string());
-        let key = self.key_for_final_url(final_url)?;
-        Ok(CachedPage {
-            fetch: CachedFetch {
-                input_url: input_url.to_string(),
-                final_url: final_url.to_string(),
-                normalized_final_url: key.normalized_final_url,
-                status,
-                fetched_at,
-            },
-            headers,
-            html,
-        })
     }
 
     fn version_path(&self) -> PathBuf {
@@ -183,6 +156,7 @@ impl Cache for FileCache {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
@@ -193,6 +167,27 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("pageinfo-cache-test-{nanos}"))
+    }
+
+    fn make_cached_page(
+        input_url: &str,
+        final_url: &str,
+        status: u16,
+        headers: HashMap<String, String>,
+        html: &str,
+    ) -> CachedPage {
+        let key = CacheKey::new(final_url).unwrap();
+        CachedPage {
+            fetch: CachedFetch {
+                input_url: input_url.to_string(),
+                final_url: final_url.to_string(),
+                normalized_final_url: key.normalized_final_url,
+                status,
+                fetched_at: "0".to_string(),
+            },
+            headers,
+            html: html.to_string(),
+        }
     }
 
     #[test]
@@ -209,15 +204,13 @@ mod tests {
         let mut headers = HashMap::new();
         headers.insert("content-type".to_string(), "text/html".to_string());
 
-        let page = cache
-            .cache_page(
-                "https://example.com",
-                "https://example.com/news",
-                200,
-                headers,
-                "<html></html>".to_string(),
-            )
-            .unwrap();
+        let page = make_cached_page(
+            "https://example.com",
+            "https://example.com/news",
+            200,
+            headers,
+            "<html></html>",
+        );
 
         let key = cache.store(page).unwrap();
         let loaded = cache.load(&key).unwrap().unwrap();
@@ -240,15 +233,13 @@ mod tests {
 
         cache.init().unwrap();
 
-        let page = cache
-            .cache_page(
-                "https://example.com",
-                "https://example.com/news",
-                200,
-                HashMap::new(),
-                "<html></html>".to_string(),
-            )
-            .unwrap();
+        let page = make_cached_page(
+            "https://example.com",
+            "https://example.com/news",
+            200,
+            HashMap::new(),
+            "<html></html>",
+        );
 
         let key = cache.store(page).unwrap();
         assert!(cache.load(&key).unwrap().is_some());
