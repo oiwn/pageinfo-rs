@@ -1,6 +1,6 @@
 [package]
 name = "pageinfo-rs"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "CLI tool that analyzes web pages and produces structured LLM-friendly output"
 license = "GPL-3.0"
@@ -24,7 +24,8 @@ path = "src/lib.rs"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 comfy-table = "7"
-dom-content-extraction = "0.3"
+dirs = "6"
+dom-content-extraction = { git = "https://github.com/oiwn/dom-content-extraction", branch = "dev" }
 futures = "0.3"
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -33,5 +34,5 @@ sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 url = "2"
-wreq = "5"
-wreq-util = "2"
+wreq = "6.0.0-rc.28"
+wreq-util = "3.0.0-rc.10"

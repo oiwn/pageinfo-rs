@@ -2,7 +2,11 @@ pub fn render(topic: Option<&str>) -> String {
     match topic.map(|t| t.trim().to_ascii_lowercase()) {
         None => general_help(),
         Some(topic) if topic.is_empty() => general_help(),
-        Some(topic) if topic == "analyze" => analyze_help(),
+        Some(topic) if topic == "fetch" => fetch_help(),
+        Some(topic) if topic == "links" => links_help(),
+        Some(topic) if topic == "meta" => meta_help(),
+        Some(topic) if topic == "json" => json_help(),
+        Some(topic) if topic == "text" => text_help(),
         Some(topic) if topic == "http" => http_help(),
         Some(topic) if topic == "tool" => tool_help(),
         Some(topic) => unknown_help(&topic),
@@ -17,61 +21,152 @@ fn general_help() -> String {
         "",
         "## Commands",
         "",
-        "- `pginf analyze -u <URL>`: main research command; returns the full page report",
-        "- `pginf analyze -u <URL> links`: focused link and URL-group view",
-        "- `pginf analyze -u <URL> meta`: focused curated-metadata view",
-        "- `pginf analyze -u <URL> json`: focused structured-data / embedded-JSON view",
-        "- `pginf http -u <URL>`: low-level HTTP debug command; returns request/response details",
+        "- `pginf fetch <URL>`: fetch page, cache it, print HTTP metadata",
+        "- `pginf links <URL>`: URL groups, path depth, internal/external links",
+        "- `pginf meta <URL>`: curated metadata (title, lang, description, og:type, etc.)",
+        "- `pginf json <URL>`: structured data (JSON-LD, Next.js, inline JSON)",
+        "- `pginf text <URL>`: extracted text content",
+        "- `pginf html <URL>`: raw HTML, optionally filtered by CSS selector",
+        "- `pginf http <URL>`: low-level HTTP debug (request/response details)",
         "- `pginf help [topic]`: built-in guide for humans and LLMs",
+        "",
+        "All commands that take a URL support `--json` for machine-readable output.",
         "",
         "## Typical Workflow",
         "",
-        "1. Start with `pginf analyze -u <URL>`.",
-        "2. Use `pginf analyze --refresh` if you need a fresh fetch.",
-        "3. Use `pginf analyze --no-cache` if you do not want cache read/write.",
-        "4. Use `pginf http -u <URL>` when fetch behavior itself needs debugging.",
+        "1. Start with `pginf fetch <URL>` to load the page into cache.",
+        "2. Use `pginf links <URL>` to inspect URL structure.",
+        "3. Use `pginf meta <URL>` or `pginf json <URL>` for deeper analysis.",
+        "4. Use `pginf text <URL>` for content extraction.",
+        "5. Use `pginf http <URL>` when fetch behavior itself needs debugging.",
+        "",
+        "## Cache",
+        "",
+        "- Pages are cached automatically in `.pginf/`.",
+        "- `--refresh`: refetch and overwrite cache.",
+        "- `--no-cache`: skip cache read/write.",
         "",
         "## Topics",
         "",
-        "- `pginf help analyze`",
+        "- `pginf help fetch`",
+        "- `pginf help links`",
+        "- `pginf help meta`",
+        "- `pginf help json`",
+        "- `pginf help text`",
         "- `pginf help http`",
         "- `pginf help tool`",
     ]
     .join("\n")
 }
 
-fn analyze_help() -> String {
+fn fetch_help() -> String {
     [
-        "# `pginf analyze`",
+        "# `pginf fetch`",
         "",
-        "Purpose: fetch or load one page and return a structured markdown report for crawler research.",
+        "Fetch a page, cache it, and print HTTP metadata.",
         "",
         "## What It Returns",
         "",
-        "- default view: full page report",
-        "- `links`: link evidence, section grouping, sample URLs, path-depth summary",
-        "- `meta`: curated metadata only",
-        "- `json`: structured-data / embedded-JSON summary only",
-        "",
-        "## Cache Behavior",
-        "",
-        "- default: read cache on hit, fetch on miss, store fetched raw page",
-        "- `--refresh`: skip cache read, fetch again, overwrite cache entry",
-        "- `--no-cache`: do not read or write cache",
+        "- input URL / final URL (after redirects)",
+        "- HTTP status code",
+        "- response headers",
+        "- duration in ms",
+        "- whether result came from cache",
         "",
         "## Examples",
         "",
-        "- `pginf analyze -u https://example.com`",
-        "- `pginf analyze -u https://example.com links`",
-        "- `pginf analyze -u https://example.com meta`",
-        "- `pginf analyze -u https://example.com json`",
-        "- `pginf analyze -u https://example.com --refresh`",
-        "- `pginf analyze -u https://example.com --no-cache`",
+        "- `pginf fetch https://example.com`",
+        "- `pginf fetch https://example.com --json`",
+        "- `pginf fetch https://example.com --refresh`",
+        "- `pginf fetch https://example.com --no-cache`",
+    ]
+    .join("\n")
+}
+
+fn links_help() -> String {
+    [
+        "# `pginf links`",
         "",
-        "## Notes",
+        "Show link grouping and URL structure from a page.",
         "",
-        "- this command provides evidence, not final crawler configs",
-        "- extracted content is intentionally kept so an LLM can inspect the page itself",
+        "## What It Returns",
+        "",
+        "- internal links grouped by first path segment",
+        "- path depth distribution",
+        "- sample URLs per section",
+        "- utility URLs (privacy, terms, feeds, etc.)",
+        "",
+        "## Flags",
+        "",
+        "- `--inbound`: show only internal links",
+        "- `--outbound`: show only external links",
+        "- `--json`: machine-readable output",
+        "",
+        "## Examples",
+        "",
+        "- `pginf links https://example.com`",
+        "- `pginf links https://example.com --inbound`",
+        "- `pginf links https://example.com --json`",
+    ]
+    .join("\n")
+}
+
+fn meta_help() -> String {
+    [
+        "# `pginf meta`",
+        "",
+        "Show curated metadata from a page.",
+        "",
+        "## What It Returns",
+        "",
+        "- title, lang",
+        "- high-signal meta tags (description, robots, og:type, article:section, etc.)",
+        "",
+        "## Examples",
+        "",
+        "- `pginf meta https://example.com`",
+        "- `pginf meta https://example.com --json`",
+    ]
+    .join("\n")
+}
+
+fn json_help() -> String {
+    [
+        "# `pginf json`",
+        "",
+        "Show structured data detected in a page.",
+        "",
+        "## What It Returns",
+        "",
+        "- JSON-LD block count and detected types",
+        "- Next.js data detection",
+        "- inline JSON payload detection",
+        "",
+        "## Examples",
+        "",
+        "- `pginf json https://example.com`",
+        "- `pginf json https://example.com --json`",
+    ]
+    .join("\n")
+}
+
+fn text_help() -> String {
+    [
+        "# `pginf text`",
+        "",
+        "Extract text content from a page using dom-content-extraction.",
+        "",
+        "## Flags",
+        "",
+        "- `--format text` (default): plain text extraction",
+        "- `--format markdown`: markdown-formatted extraction",
+        "- `--json`: machine-readable output",
+        "",
+        "## Examples",
+        "",
+        "- `pginf text https://example.com`",
+        "- `pginf text https://example.com --format markdown`",
+        "- `pginf text https://example.com --json`",
     ]
     .join("\n")
 }
@@ -80,7 +175,7 @@ fn http_help() -> String {
     [
         "# `pginf http`",
         "",
-        "Purpose: inspect low-level HTTP behavior for one URL.",
+        "Inspect low-level HTTP behavior for one URL.",
         "",
         "## What It Returns",
         "",
@@ -95,7 +190,6 @@ fn http_help() -> String {
         "",
         "- page fetches fail unexpectedly",
         "- redirects, headers, or transport behavior need inspection",
-        "- you need to compare fetch behavior with `analyze` output",
         "",
         "## Example",
         "",
@@ -112,31 +206,32 @@ fn tool_help() -> String {
         "",
         "## Recommended First Step",
         "",
-        "Run `pginf analyze -u <URL>` first.",
+        "Run `pginf fetch <URL>` first.",
         "",
         "## Command Choice",
         "",
-        "- use `analyze` for the full page report",
-        "- use `analyze ... links` for focused URL/group evidence",
-        "- use `analyze ... meta` for curated metadata only",
-        "- use `analyze ... json` for structured-data evidence",
-        "- use `http` for request/response debugging only",
+        "- use `fetch` to load a page into cache and see HTTP metadata",
+        "- use `links` for URL structure and link grouping",
+        "- use `meta` for curated metadata",
+        "- use `json` for structured data (JSON-LD, Next.js)",
+        "- use `text` for content extraction",
+        "- use `http` for request/response debugging",
         "",
-        "## Output Expectations",
+        "## Output",
         "",
-        "- `analyze` returns structured markdown intended for reading or passing to an LLM",
-        "- `http` returns transport-level debugging output",
+        "- All commands default to markdown output",
+        "- Pass `--json` for machine-readable JSON",
         "",
         "## Cache",
         "",
-        "- cache is enabled by default for `analyze`",
+        "- cache is enabled by default",
         "- `--refresh` forces a refetch",
         "- `--no-cache` disables cache read/write for that invocation",
         "",
         "## Caveats",
         "",
-        "- current cache lookup can miss if the requested URL redirects to a different final URL",
-        "- current `analyze` output is still being improved and should be treated as evidence, not ground truth",
+        "- cache lookup can miss if the requested URL redirects to a different final URL",
+        "- the tool uses HTTP only -- JS-rendered content may be incomplete",
     ]
     .join("\n")
 }
@@ -145,7 +240,37 @@ fn unknown_help(topic: &str) -> String {
     [
         format!("# Unknown Help Topic: `{topic}`"),
         "".to_string(),
-        "Available topics: `analyze`, `http`, `tool`".to_string(),
+        "Available topics: `fetch`, `links`, `meta`, `json`, `text`, `http`, `tool`".to_string(),
     ]
     .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn general_help_lists_commands() {
+        let help = render(None);
+        assert!(help.contains("pginf fetch"));
+        assert!(help.contains("pginf links"));
+    }
+
+    #[test]
+    fn tool_help_mentions_fetch() {
+        let help = render(Some("tool"));
+        assert!(help.contains("pginf fetch"));
+    }
+
+    #[test]
+    fn fetch_help_returns_content() {
+        let help = render(Some("fetch"));
+        assert!(help.contains("HTTP metadata"));
+    }
+
+    #[test]
+    fn unknown_topic_returns_suggestions() {
+        let help = render(Some("nonexistent"));
+        assert!(help.contains("Unknown"));
+    }
 }
