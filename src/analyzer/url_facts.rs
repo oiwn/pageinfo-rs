@@ -56,10 +56,8 @@ impl UrlFacts {
         let mut utility_urls: HashSet<String> = HashSet::new();
 
         for link in &internal {
-            let Ok(parsed) = url::Url::parse(&link.url) else {
-                continue;
-            };
-            let segments = path_segments(&parsed);
+            let parsed = &link.url;
+            let segments = path_segments(parsed);
             let depth = segments.len();
 
             if depth == 0 {
@@ -78,7 +76,7 @@ impl UrlFacts {
             }
 
             if is_utility_url(&segments) {
-                utility_urls.insert(link.url.clone());
+                utility_urls.insert(link.url.to_string());
             }
 
             segments_by_depth.entry(depth).or_default().push(segments);
@@ -113,6 +111,7 @@ impl UrlFacts {
         }
     }
 
+    #[allow(dead_code)]
     pub fn detected_url_pattern(&self) -> Option<String> {
         if self.date_positions.is_empty() {
             return None;
@@ -256,7 +255,8 @@ mod tests {
 
     fn make_link(url: &str, is_internal: bool) -> Link {
         Link {
-            url: url.to_string(),
+            raw_url: url.to_string(),
+            url: url::Url::parse(url).unwrap(),
             text: None,
             rel: None,
             is_internal,

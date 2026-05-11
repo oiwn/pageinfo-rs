@@ -45,7 +45,37 @@ let client = PageClient::builder()
 let cached_page = client.fetch("https://example.com").await?;
 ```
 
+### Link Extraction
+
+```rust
+use pageinfo_rs::{extract_links, Link};
+use pageinfo_rs::dom_content_extraction::scraper::Html;
+use url::Url;
+
+let doc = Html::parse_document(&html_body);
+let base = Url::parse("https://example.com")?;
+
+// All links, normalized (lowercase host, no fragment)
+let links: Vec<Link> = extract_links(&doc, &base);
+
+// Internal links can be selected from processed links
+let internal: Vec<&Link> = links.iter().filter(|link| link.is_internal).collect();
+
+// Manual normalization/tracking on individual links
+let mut link = links[0].clone();
+link.normalize();       // "https://example.com/page?utm_source=x"
+link.strip_tracking();  // "https://example.com/page"
+
+// Classification helpers
+link.is_asset();            // true for .css, .js, .png, .svg, .woff2, etc.
+link.is_same_host(&base);   // exact host match, not registered domain
+```
+
+Also exported: `extract_registered_domain`, `UrlFacts`, `DateKind`.
+
 `pageinfo_rs` re-exports `Emulation`, `wreq`, and `wreq_util` — no extra direct dependencies needed.
+
+`FetchResult` includes fetch transparency fields: `emulation_used`, `proxy_used` (masked), `attempts`.
 
 Features:
 
@@ -56,27 +86,72 @@ Features:
 
 ## CLI Commands
 
-### `analyze`
+### `fetch`
 
-Main research command. Uses local page cache by default.
-
-```bash
-pginf analyze -u https://example.com
-```
-
-Focused views:
+Fetch a page, cache it, and print HTTP metadata.
 
 ```bash
-pginf analyze -u https://example.com links
-pginf analyze -u https://example.com meta
-pginf analyze -u https://example.com json
+pginf fetch https://example.com
+pginf fetch https://example.com --json
 ```
 
 Cache flags:
 
 ```bash
-pginf analyze -u https://example.com --refresh
-pginf analyze -u https://example.com --no-cache
+pginf fetch https://example.com --refresh
+pginf fetch https://example.com --no-cache
+```
+
+### `links`
+
+Show URL groups, path depth, and internal/external link structure.
+
+```bash
+pginf links https://example.com
+pginf links https://example.com --filter internal
+pginf links https://example.com --filter external --format toon
+pginf links https://example.com --format json
+```
+
+### `meta`
+
+Show curated page metadata.
+
+```bash
+pginf meta https://example.com
+pginf meta https://example.com --format json
+pginf meta https://example.com --format toon
+```
+
+### `json`
+
+Show structured data signals such as JSON-LD and Next.js data.
+
+```bash
+pginf json https://example.com
+pginf json https://example.com --json
+```
+
+### `text`
+
+Extract page text content.
+
+```bash
+pginf text https://example.com
+pginf text https://example.com --format json
+pginf text https://example.com --format toon
+```
+
+### `html`
+
+Show HTML content, optionally filtered by CSS selector. Uses the same page cache
+as the analysis commands.
+
+```bash
+pginf html -u https://example.com                    # full HTML
+pginf html -u https://example.com -s "div.article"   # elements matching selector
+pginf html -u https://example.com -s "h1, h2"        # multiple selectors
+pginf html -u https://example.com --no-cache         # fresh fetch
 ```
 
 ### `http`
@@ -85,17 +160,6 @@ Low-level HTTP debug command. Shows request/response headers, body, and timing.
 
 ```bash
 pginf http -u https://example.com
-```
-
-### `html`
-
-Show HTML content, optionally filtered by CSS selector. Uses same cache as `analyze`.
-
-```bash
-pginf html -u https://example.com                    # full HTML
-pginf html -u https://example.com -s "div.article"   # elements matching selector
-pginf html -u https://example.com -s "h1, h2"        # multiple selectors
-pginf html -u https://example.com --no-cache         # fresh fetch
 ```
 
 ### `install`
@@ -113,7 +177,11 @@ Built-in documentation.
 
 ```bash
 pginf help
-pginf help analyze
+pginf help fetch
+pginf help links
+pginf help meta
+pginf help json
+pginf help text
 pginf help http
 pginf help tool
 ```
@@ -123,9 +191,9 @@ pginf help tool
 Apply to all commands that fetch pages:
 
 ```bash
-pginf --proxy socks5://user:pass@host:port analyze -u https://example.com
-pginf --browser chrome131 analyze -u https://example.com
-pginf --timeout 60 analyze -u https://example.com
+pginf --proxy socks5://user:pass@host:port fetch https://example.com
+pginf --browser chrome131 fetch https://example.com
+pginf --timeout 60 fetch https://example.com
 ```
 
 | Flag | Description |
@@ -145,7 +213,8 @@ pginf install skills global    # user-level
 
 ## Cache
 
-`analyze` and `html` cache fetched pages locally in `.pginf/`. Stored data: fetch metadata, response headers, raw HTML.
+`fetch`, `links`, `meta`, `json`, `text`, and `html` cache fetched pages
+locally in `.pginf/`. Stored data: fetch metadata, response headers, raw HTML.
 
 Cache behavior:
 
@@ -159,8 +228,9 @@ Cache behavior:
 src/
   client.rs          PageClient — HTTP fetching, proxy, browser emulation, fallback
   http_display.rs    HTTP transaction types and formatting (for `http` command)
+  output.rs          Shared `text|json|toon` rendering traits
   skills.rs          Embedded skill file + install logic (for `install` command)
-  analyzer/          Page analysis: link extraction, URL grouping, metadata, structured data
+  analyzer.rs        Page analysis: link extraction, URL grouping, metadata, text
   cache/             File-based page cache (.pginf/)
   html.rs            Legacy page info extraction (used by `http` command)
   help.rs            Built-in help text

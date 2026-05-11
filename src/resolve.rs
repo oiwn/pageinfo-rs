@@ -44,7 +44,7 @@ pub async fn resolve_page(
                     status: cached.fetch.status,
                     headers: cached.headers,
                     body: cached.html,
-                    duration_ms: 0,
+                    ..Default::default()
                 },
                 from_cache: true,
             });

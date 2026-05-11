@@ -1,84 +1,79 @@
-# Project State
+# Current task context
 
-## v0.2.0 — current
+## Current state
 
-**CLI commands:** `fetch`, `links`, `meta`, `json`, `text`, `html`, `http`, `install skills {local|global}`, `help`
+The shared output migration is complete for:
 
-Removed: `analyze` (replaced by individual top-level commands).
+- `pginf meta <url> --format text|json|toon`
+- `pginf links <url> --filter all|internal|external --format text|json|toon`
+- `pginf text <url> --format text|json|toon`
 
-### Command surface
+Old flags are intentionally rejected for migrated commands:
 
+- `meta --json`
+- `links --json`
+- `links --inbound`
+- `links --outbound`
+- `text --json`
+- `text --format markdown`
+
+`links` now preserves raw DOM evidence (`RawLink.href` / `Link.raw_url`) and
+renders processed absolute `Link.url` rows. `UrlFacts` groups/depth/utility
+URLs remain summary evidence.
+
+`text` now renders from typed `TextOutput` with:
+
+```json
+{
+  "url": "https://example.com",
+  "content": "...",
+  "content_length": 123
+}
 ```
-pginf fetch <url>                         # fetch + cache, print HTTP metadata only
-pginf fetch <url> --json                  # same, JSON output
 
-pginf links <url>                         # URL groups, path depth, samples
-pginf links <url> --inbound               # internal links only
-pginf links <url> --outbound              # external links only
-pginf links <url> --json
+Reference verification URL for text:
 
-pginf meta <url>                          # curated metadata (title, lang, meta tags)
-pginf meta <url> --json
-
-pginf json <url>                          # structured data: JSON-LD, Next.js, inline
-pginf json <url> --json
-
-pginf text <url>                          # dom-content-extraction plaintext
-pginf text <url> --format markdown        # DCE as markdown (currently same as text)
-pginf text <url> --json
-
-pginf html <url> [-s <selector>]          # raw HTML, optional CSS filter
-pginf http <url>                          # low-level HTTP debug
+```bash
+cargo run --quiet -- text https://exodata.space/docs --format json
+cargo run --quiet -- text https://exodata.space/docs --format toon
 ```
 
-Global flags: `--proxy`, `--browser`, `--timeout`, `--refresh`, `--no-cache`
-All commands default to markdown output. `--json` for machine-readable.
+## Next release work
 
-### Architecture
+1. Migrate `pginf fetch` to the shared output pattern.
+   - Prefer `--format text|json|toon`.
+   - Preserve existing fetch metadata shape: input URL, final URL, status,
+     duration, cache status, headers, body size, emulation/proxy/attempts.
 
-- `client.rs` — PageClient, returns `FetchResult` (no cache coupling)
-- `resolve.rs` — shared `resolve_page()` (cache-check → fetch → cache-store)
-- `analyzer/` — link extraction, URL grouping, metadata, structured data
-- `cache/` — file-based page cache
-- `http_display.rs` — HTTP transaction formatting
-- `html.rs` — legacy page info (used by `http` command)
-- `help.rs` — built-in help text
-- `skills.rs` — skill file install
+2. Migrate `pginf json` to typed output.
+   - Replace the current summary-only JSON path with a typed command output.
+   - Decide whether this release should expose parsed JSON-LD / Next.js payloads
+     or only preserve the current counts/signals.
 
-### JSON output shapes
+3. Decide what to do with `pginf html`.
+   - Option A: keep it as a raw/debug command with selector support.
+   - Option B: add shared `--format text|json|toon` rendering for selected
+     elements.
 
-**fetch --json:** `{input_url, final_url, status, headers{}, duration_ms, cached, body_size}`
-**links --json:** `{url, total_internal, total_external, groups[{section, count, samples[]}], depth_distribution[], utility_urls[]}`
-**meta --json:** `{url, title, lang, tags[{name, content}]}`
-**json --json:** `{url, json_ld_count, kinds[]}`
-**text --json:** `{url, format, content, content_length}`
+4. Revisit docs and installed skill after the remaining command migrations.
+   - `README.md`
+   - `CHANGELOG.md`
+   - `skills/pginf.md`
+   - built-in help in `src/help.rs`
 
-### Key deps
+## Verification baseline
 
-wreq 6, wreq-util 3, dirs 6, scraper (via dom-content-extraction)
+Run after each command migration:
 
-### Cache
+```bash
+cargo fmt
+cargo test
+```
 
-`.pginf/` in CWD (const `CACHE_DIR` in `cache/types.rs`)
+Manual smoke checks:
 
-### Re-exports (lib.rs)
-
-`PageClient`, `FetchResult`, `Emulation`, `dom_content_extraction`, `wreq`, `wreq_util`
-
-**Tests:** 106 passing
-**Manual QA set:** `specs/qa.md`
-
-### Not Done Yet
-
-- Markdown text extraction via DCE density tree (needs upstream support)
-- More granular URL bucketing / similarity clustering
-- Sampling across multiple pages
-- Better query parameter analysis
-- Anchor text sampling in URL groups
-
----
-
-## v0.1.2 — previous
-
-**CLI commands:** `analyze`, `http`, `html`, `install skills {local|global}`, `help`
-**Tests:** 91 passing
+```bash
+cargo run --quiet -- meta https://exodata.space/docs --format json
+cargo run --quiet -- links 'https://exodata.space/exoplanets/TOI-7009%20b' --format toon
+cargo run --quiet -- text https://exodata.space/docs --format json
+```

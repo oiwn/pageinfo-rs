@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Breaking changes
+
+- `pginf meta`, `pginf links`, and `pginf text` now use `--format text|json|toon`
+  for output selection.
+- Removed legacy `pginf meta --json`, `pginf links --json`, and
+  `pginf text --json`.
+- Replaced `pginf links --inbound/--outbound` with
+  `pginf links --filter all|internal|external`.
+- Removed `pginf text --format markdown`; markdown text rendering is deferred.
+- Removed the `extract_internal_links` compatibility wrapper from the public
+  library API. Filter `extract_links()` results by `Link::is_internal` instead.
+
+### New features
+
+- Shared typed output/rendering system with `OutputFormat` and `RenderOutput`.
+- `pginf meta`, `pginf links`, and `pginf text` support TOON output via
+  `--format toon`.
+- `pginf links` now renders processed link rows with preserved `raw_url`,
+  resolved absolute `url`, text, rel, and internal/external classification.
+- `pginf text --format json|toon` returns `url`, `content`, and
+  `content_length`.
+- Public link extraction API: `extract_links`, `extract_raw_links`,
+  `extract_registered_domain`, `Link`, `RawLink`, `LinkOptions`, `UrlFacts`,
+  `DateKind` available at crate root.
+- `Link::normalize()` — lowercases host, drops fragment.
+- `Link::strip_tracking()` — removes `utm_*`, `fbclid`, `gclid` query params.
+- `Link::is_same_host(&Url) -> bool` — exact host comparison.
+- `Link::is_asset() -> bool` — detects css, js, png, jpg, svg, woff2, pdf, etc.
+- `LinkOptions { normalize, strip_tracking_params, max }` with `Default`.
+- `extract_links()` now normalizes all links by default (lowercase host, no fragment).
+- `FetchResult` now records `emulation_used`, `proxy_used` (masked), and `attempts` for fetch transparency.
+- `analyzer::link`, `analyzer::url_facts`, `analyzer::date_kind` modules are now `pub mod`.
+
 ## v0.2.0
 
 ### Breaking changes

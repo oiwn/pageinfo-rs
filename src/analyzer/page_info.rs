@@ -1,14 +1,18 @@
 use comfy_table::presets::UTF8_FULL_CONDENSED;
-use comfy_table::{Attribute, Cell, CellAlignment, ContentArrangement, Table};
+use comfy_table::{Attribute, Cell, ContentArrangement, Table};
 use dom_content_extraction::scraper::{Html, Selector};
 use url::Url;
 
 use crate::analyzer::error::AnalyzerError;
-use crate::analyzer::link;
-use crate::analyzer::meta_tag::MetaTag;
+use crate::analyzer::link::{self, Link, LinkFilter, LinkGroup, LinksOutput};
+use crate::analyzer::meta_tag::{
+    MetaOutput, MetaTag, MetaVerbosity, extract_meta, select_meta,
+};
+use crate::analyzer::text::TextOutput;
 use crate::analyzer::url_facts::UrlFacts;
 use crate::cache::CachedPage;
 use crate::client::{ClientError, FetchResult};
+use crate::output::RenderOutput;
 
 #[derive(Debug, Clone)]
 pub struct StructuredDataSummary {
@@ -17,7 +21,6 @@ pub struct StructuredDataSummary {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct PageInfo {
     pub url: String,
     pub final_url: String,
@@ -26,6 +29,7 @@ pub struct PageInfo {
     pub title: Option<String>,
     pub lang: Option<String>,
     pub meta: Vec<MetaTag>,
+    pub links: Vec<Link>,
     pub url_facts: UrlFacts,
     pub feeds: Vec<String>,
     pub structured_data: StructuredDataSummary,
@@ -100,6 +104,7 @@ impl PageInfo {
             title,
             lang,
             meta,
+            links,
             url_facts,
             feeds,
             structured_data,
@@ -114,106 +119,79 @@ impl PageInfo {
         out.push_str(&format!("# Page Analysis: {}\n\n", self.domain));
         out.push_str(&self.format_header());
         out.push_str(&self.format_summary());
-        out.push_str(&self.format_meta_for_llm());
+        out.push_str(&self.meta_output(MetaVerbosity::Main).render_text());
         out.push_str(&self.format_links_for_llm());
         out.push_str(&self.format_json_for_llm());
         out.push_str(&self.format_content_for_llm());
         out
     }
 
+    #[allow(dead_code)]
     pub fn format_links_for_llm(&self) -> String {
-        let mut out = String::new();
-        let facts = &self.url_facts;
-
-        if !facts.top_first_segments.is_empty() {
-            out.push_str("\n## URL Groups\n");
-
-            if let Some(ref pattern) = facts.detected_url_pattern() {
-                out.push_str(&format!("Detected article pattern: {}\n", pattern));
-            }
-
-            let mut sections_table = Table::new();
-            sections_table.set_content_arrangement(ContentArrangement::Dynamic);
-            sections_table.load_preset(UTF8_FULL_CONDENSED);
-            sections_table.set_header(vec![
-                Cell::new("Section").add_attribute(Attribute::Bold),
-                Cell::new("Links")
-                    .add_attribute(Attribute::Bold)
-                    .set_alignment(CellAlignment::Right),
-                Cell::new("Sample URLs").add_attribute(Attribute::Bold),
-            ]);
-
-            for (segment, count) in &facts.top_first_segments {
-                let samples = facts
-                    .url_samples_by_section
-                    .get(segment)
-                    .map(|urls| urls.join("\n"))
-                    .unwrap_or_default();
-                sections_table.add_row(vec![
-                    Cell::new(segment),
-                    Cell::new(count).set_alignment(CellAlignment::Right),
-                    Cell::new(&samples),
-                ]);
-            }
-
-            out.push_str(&sections_table.to_string());
-            out.push('\n');
-        }
-
-        if !facts.depth_distribution.is_empty() {
-            out.push_str("\n## Path Depth\n");
-            let mut depth_table = Table::new();
-            depth_table.set_content_arrangement(ContentArrangement::Dynamic);
-            depth_table.load_preset(UTF8_FULL_CONDENSED);
-            depth_table.set_header(vec![
-                Cell::new("Depth").add_attribute(Attribute::Bold),
-                Cell::new("Count").add_attribute(Attribute::Bold),
-            ]);
-            for (depth, count) in &facts.depth_distribution {
-                depth_table.add_row(vec![Cell::new(depth), Cell::new(count)]);
-            }
-            out.push_str(&depth_table.to_string());
-            out.push('\n');
-        }
-
-        if !facts.likely_utility_urls.is_empty() {
-            out.push_str("\n## Utility URLs\n");
-            let mut util_table = Table::new();
-            util_table.set_content_arrangement(ContentArrangement::Dynamic);
-            util_table.load_preset(UTF8_FULL_CONDENSED);
-            for url in &facts.likely_utility_urls {
-                util_table.add_row(vec![Cell::new(url)]);
-            }
-            out.push_str(&util_table.to_string());
-            out.push('\n');
-        }
-
-        out
+        self.links_output(LinkFilter::All).render_text()
     }
 
-    pub fn format_meta_for_llm(&self) -> String {
-        let curated = curated_meta(&self.meta);
-        if curated.is_empty() {
-            return String::new();
-        }
+    pub fn meta_tags(&self, verbosity: MetaVerbosity) -> Vec<MetaTag> {
+        select_meta(&self.meta, verbosity)
+    }
 
-        let mut out = String::new();
-        out.push_str("\n## Curated Metadata\n");
-        let mut meta_table = Table::new();
-        meta_table.set_content_arrangement(ContentArrangement::Dynamic);
-        meta_table.load_preset(UTF8_FULL_CONDENSED);
-        meta_table.set_header(vec![
-            Cell::new("Property").add_attribute(Attribute::Bold),
-            Cell::new("Content").add_attribute(Attribute::Bold),
-        ]);
-        for tag in curated {
-            let name = tag.name.as_deref().unwrap_or("(unnamed)");
-            let content = tag.content.as_deref().unwrap_or("");
-            meta_table.add_row(vec![Cell::new(name), Cell::new(content)]);
+    pub fn meta_output(&self, verbosity: MetaVerbosity) -> MetaOutput {
+        MetaOutput {
+            url: self.final_url.clone(),
+            title: self.title.clone(),
+            lang: self.lang.clone(),
+            verbosity,
+            tags: self.meta_tags(verbosity),
         }
-        out.push_str(&meta_table.to_string());
-        out.push('\n');
-        out
+    }
+
+    pub fn links_output(&self, filter: LinkFilter) -> LinksOutput {
+        let facts = &self.url_facts;
+        let links = self
+            .links
+            .iter()
+            .filter(|link| match filter {
+                LinkFilter::All => true,
+                LinkFilter::Internal => link.is_internal,
+                LinkFilter::External => !link.is_internal,
+            })
+            .cloned()
+            .collect();
+        let groups = facts
+            .top_first_segments
+            .iter()
+            .map(|(section, count)| {
+                let samples = facts
+                    .url_samples_by_section
+                    .get(section)
+                    .cloned()
+                    .unwrap_or_default();
+                LinkGroup {
+                    section: section.clone(),
+                    count: *count,
+                    samples,
+                }
+            })
+            .collect();
+        LinksOutput {
+            url: self.final_url.clone(),
+            filter,
+            total_internal: facts.total_internal,
+            total_external: facts.total_external,
+            links,
+            groups,
+            depth_distribution: facts
+                .depth_distribution
+                .iter()
+                .map(|(depth, count)| (*depth, *count))
+                .collect(),
+            utility_urls: facts.likely_utility_urls.clone(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn format_meta_for_llm(&self, verbosity: MetaVerbosity) -> String {
+        self.meta_output(verbosity).render_text()
     }
 
     pub fn format_json_for_llm(&self) -> String {
@@ -324,74 +302,9 @@ impl PageInfo {
         out
     }
 
-    pub fn format_text(&self, _as_markdown: bool) -> String {
-        match &self.text_content {
-            Some(text) => text.clone(),
-            None => "(no content extracted)".to_string(),
-        }
-    }
-
-    pub fn links_json(&self, inbound_only: bool, outbound_only: bool) -> String {
-        let facts = &self.url_facts;
-        let groups: Vec<serde_json::Value> = facts
-            .top_first_segments
-            .iter()
-            .map(|(section, count)| {
-                let samples: Vec<serde_json::Value> = facts
-                    .url_samples_by_section
-                    .get(section)
-                    .map(|urls| {
-                        urls.iter()
-                            .map(|u| serde_json::Value::String(u.clone()))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                serde_json::json!({
-                    "section": section,
-                    "count": count,
-                    "samples": samples,
-                })
-            })
-            .collect();
-        let depth: Vec<serde_json::Value> = facts
-            .depth_distribution
-            .iter()
-            .map(|(d, c)| serde_json::json!([d, c]))
-            .collect();
-        let mut obj = serde_json::json!({
-            "url": self.final_url,
-            "total_internal": facts.total_internal,
-            "total_external": facts.total_external,
-            "groups": groups,
-            "depth_distribution": depth,
-            "utility_urls": facts.likely_utility_urls,
-        });
-        if inbound_only {
-            obj.as_object_mut().unwrap().remove("total_external");
-        }
-        if outbound_only {
-            obj.as_object_mut().unwrap().remove("total_internal");
-        }
-        serde_json::to_string_pretty(&obj).unwrap_or_default()
-    }
-
-    pub fn meta_json(&self) -> String {
-        let tags: Vec<serde_json::Value> = curated_meta(&self.meta)
-            .iter()
-            .map(|tag| {
-                serde_json::json!({
-                    "name": tag.name,
-                    "content": tag.content,
-                })
-            })
-            .collect();
-        let obj = serde_json::json!({
-            "url": self.final_url,
-            "title": self.title,
-            "lang": self.lang,
-            "tags": tags,
-        });
-        serde_json::to_string_pretty(&obj).unwrap_or_default()
+    #[allow(dead_code)]
+    pub fn meta_json(&self, verbosity: MetaVerbosity) -> String {
+        self.meta_output(verbosity).render_json()
     }
 
     pub fn json_data_json(&self) -> String {
@@ -403,15 +316,14 @@ impl PageInfo {
         serde_json::to_string_pretty(&obj).unwrap_or_default()
     }
 
-    pub fn text_json(&self, as_markdown: bool) -> String {
-        let content = self.format_text(as_markdown);
-        let obj = serde_json::json!({
-            "url": self.final_url,
-            "format": if as_markdown { "markdown" } else { "text" },
-            "content": content,
-            "content_length": content.len(),
-        });
-        serde_json::to_string_pretty(&obj).unwrap_or_default()
+    pub fn text_output(&self) -> TextOutput {
+        TextOutput {
+            url: self.final_url.clone(),
+            content: self
+                .text_content
+                .clone()
+                .unwrap_or_else(|| "(no content extracted)".to_string()),
+        }
     }
 }
 
@@ -431,69 +343,17 @@ fn extract_lang(document: &Html) -> Option<String> {
         .and_then(|el| el.value().attr("lang").map(String::from))
 }
 
-fn extract_meta(document: &Html) -> Vec<MetaTag> {
-    let selector = match Selector::parse("meta") {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-
-    document
-        .select(&selector)
-        .filter_map(|el| {
-            let attrs = el.value();
-            let name = attrs
-                .attr("name")
-                .or_else(|| attrs.attr("property"))
-                .map(String::from);
-            let content = attrs.attr("content").map(String::from);
-
-            if name.is_some() || content.is_some() {
-                Some(MetaTag { name, content })
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn curated_meta(meta: &[MetaTag]) -> Vec<MetaTag> {
-    let mut curated = Vec::new();
-    for tag in meta {
-        let Some(name) = tag.name.as_deref() else {
-            continue;
-        };
-        let lower = name.to_ascii_lowercase();
-        let keep = matches!(
-            lower.as_str(),
-            "description"
-                | "robots"
-                | "og:type"
-                | "og:locale"
-                | "content-language"
-                | "language"
-                | "page-category"
-                | "article:section"
-                | "section"
-                | "category"
-        );
-        if keep {
-            curated.push(tag.clone());
-        }
-    }
-    curated
-}
-
 fn detect_feeds(links: &[link::Link]) -> Vec<String> {
     let mut feeds = std::collections::BTreeSet::new();
     for link in links {
-        let lower = link.url.to_ascii_lowercase();
+        let lower = link.url.as_str().to_ascii_lowercase();
         if lower.contains("/rss")
             || lower.contains("rss/")
             || lower.contains("/feed")
             || lower.contains("feed/")
             || lower.contains("atom")
         {
-            feeds.insert(link.url.clone());
+            feeds.insert(link.url.to_string());
         }
     }
     feeds.into_iter().collect()
@@ -549,13 +409,20 @@ mod tests {
     use super::*;
     use crate::cache::{CachedFetch, CachedPage};
 
-    const FAKE_HTML: &str = r#"<!DOCTYPE html>
+    const FAKE_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <meta name="description" content="Test page description">
     <meta name="robots" content="index, follow">
+    <meta name="twitter:title" content="Twitter title">
+    <meta name="theme-color" content="#000">
     <meta property="og:type" content="article">
+    <meta property="og:title" content="OG title">
+    <meta property="article:published_time" content="2026-05-10T16:49:28">
+    <meta property="article:tag" id="article:tag:Bitcoin" content="Bitcoin">
+    <meta itemprop="datePublished" content="2026-05-10">
     <meta name="viewport" content="width=device-width">
     <title>Test Page Title</title>
     <script type="application/ld+json">{"@type":"NewsArticle"}</script>
@@ -573,7 +440,7 @@ mod tests {
         <a href="/rss/feed.xml">RSS Feed</a>
     </main>
 </body>
-</html>"#;
+</html>"##;
 
     fn fake_cached_page() -> CachedPage {
         CachedPage {
@@ -594,9 +461,10 @@ mod tests {
             input_url: "https://example.com/".to_string(),
             final_url: "https://example.com/".to_string(),
             status: 200,
-            headers: std::collections::HashMap::new(),
             body: FAKE_HTML.to_string(),
             duration_ms: 42,
+            attempts: 1,
+            ..Default::default()
         }
     }
 
@@ -666,6 +534,83 @@ mod tests {
     }
 
     #[test]
+    fn from_cached_page_meta_preserves_source_and_id() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        assert!(page.meta.iter().any(|m| {
+            m.name.as_deref() == Some("charset")
+                && m.content.as_deref() == Some("utf-8")
+                && m.source.as_deref() == Some("charset")
+        }));
+        assert!(page.meta.iter().any(|m| {
+            m.name.as_deref() == Some("content-type")
+                && m.source.as_deref() == Some("http-equiv")
+        }));
+        assert!(page.meta.iter().any(|m| {
+            m.name.as_deref() == Some("datePublished")
+                && m.source.as_deref() == Some("itemprop")
+        }));
+        assert!(page.meta.iter().any(|m| {
+            m.name.as_deref() == Some("article:tag")
+                && m.id.as_deref() == Some("article:tag:Bitcoin")
+        }));
+    }
+
+    #[test]
+    fn meta_tags_main_excludes_low_value_tags() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        let tags = page.meta_tags(MetaVerbosity::Main);
+        assert!(
+            tags.iter()
+                .any(|m| m.name.as_deref() == Some("description"))
+        );
+        assert!(tags.iter().any(|m| m.name.as_deref() == Some("og:title")));
+        assert!(
+            tags.iter()
+                .any(|m| { m.name.as_deref() == Some("article:published_time") })
+        );
+        assert!(!tags.iter().any(|m| m.name.as_deref() == Some("viewport")));
+        assert!(
+            !tags
+                .iter()
+                .any(|m| m.name.as_deref() == Some("theme-color"))
+        );
+        assert!(!tags.iter().any(|m| m.name.as_deref() == Some("charset")));
+    }
+
+    #[test]
+    fn meta_tags_extended_includes_protocol_tags() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        let tags = page.meta_tags(MetaVerbosity::Extended);
+        assert!(tags.iter().any(|m| m.name.as_deref() == Some("charset")));
+        assert!(
+            tags.iter()
+                .any(|m| { m.name.as_deref() == Some("content-type") })
+        );
+        assert!(
+            tags.iter()
+                .any(|m| { m.name.as_deref() == Some("twitter:title") })
+        );
+        assert!(!tags.iter().any(|m| m.name.as_deref() == Some("viewport")));
+        assert!(
+            !tags
+                .iter()
+                .any(|m| m.name.as_deref() == Some("theme-color"))
+        );
+    }
+
+    #[test]
+    fn meta_tags_all_includes_every_meta_tag() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        let tags = page.meta_tags(MetaVerbosity::All);
+        assert_eq!(tags.len(), page.meta.len());
+        assert!(tags.iter().any(|m| m.name.as_deref() == Some("viewport")));
+        assert!(
+            tags.iter()
+                .any(|m| m.name.as_deref() == Some("theme-color"))
+        );
+    }
+
+    #[test]
     fn format_for_llm_produces_output() {
         let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
         let out = page.format_for_llm();
@@ -683,7 +628,7 @@ mod tests {
     #[test]
     fn format_meta_for_llm_curated_only() {
         let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
-        let out = page.format_meta_for_llm();
+        let out = page.format_meta_for_llm(MetaVerbosity::Main);
         assert!(out.contains("description"));
         assert!(!out.contains("viewport"));
     }

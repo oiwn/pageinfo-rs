@@ -9,7 +9,8 @@ Project architecture is in `specs/overview.md`. Read it first.
 - Skip cargo commands if no `.rs` or `Cargo.toml` files were modified.
 - Keep responses short — fit a single screen. No walls of text.
 - View file before editing. Match whitespace exactly.
-- No comments in code unless asked.
+- Use comments and docstrings where they clarify intent, public APIs, invariants,
+  non-obvious behavior, or tradeoffs. Avoid comments that only restate the code.
 
 ## Behavioral Guidelines
 
