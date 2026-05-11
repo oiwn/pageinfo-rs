@@ -1,6 +1,6 @@
 [package]
 name = "pageinfo-rs"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "CLI tool that analyzes web pages and produces structured LLM-friendly output"
 license = "GPL-3.0"
@@ -28,11 +28,13 @@ dirs = "6"
 dom-content-extraction = { version = "0.4", features = ["markdown"] }
 futures = "0.3"
 futures-util = "0.3"
+psl = "2.1.208"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-url = "2"
+toon-format = "0.4.5"
+url = { version = "2", features = ["serde"] }
 wreq = "6.0.0-rc.28"
 wreq-util = "3.0.0-rc.10"

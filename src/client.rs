@@ -20,7 +20,7 @@ pub enum ClientError {
     AllAttemptsFailed { url: String, attempts: usize },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FetchResult {
     pub input_url: String,
     pub final_url: String,
@@ -28,6 +28,9 @@ pub struct FetchResult {
     pub headers: HashMap<String, String>,
     pub body: String,
     pub duration_ms: u64,
+    pub emulation_used: Option<String>,
+    pub proxy_used: Option<String>,
+    pub attempts: usize,
 }
 
 impl FetchResult {
@@ -50,6 +53,22 @@ impl FetchResult {
             headers: self.headers.clone(),
             html: self.body.clone(),
         }
+    }
+}
+
+fn mask_proxy(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(parsed) => {
+            let scheme = parsed.scheme();
+            if let Some(host) = parsed.host_str() {
+                let port =
+                    parsed.port().map(|p| format!(":{p}")).unwrap_or_default();
+                format!("{scheme}://***@{host}{port}")
+            } else {
+                "***".into()
+            }
+        }
+        Err(_) => "***".into(),
     }
 }
 
@@ -106,6 +125,9 @@ impl PageClient {
             match self.do_fetch(&client, &parsed).await {
                 Ok(mut result) => {
                     result.duration_ms = start.elapsed().as_millis() as u64;
+                    result.emulation_used = browser_opt.map(|e| format!("{:?}", e));
+                    result.proxy_used = self.proxy_url.as_deref().map(mask_proxy);
+                    result.attempts = attempts;
                     return Ok(result);
                 }
                 Err(e) if is_retryable(&e) => {
@@ -207,7 +229,7 @@ impl PageClient {
             status,
             headers,
             body,
-            duration_ms: 0,
+            ..Default::default()
         })
     }
 }
@@ -501,6 +523,24 @@ mod tests {
         let err = ClientError::InvalidUrl("bad".into());
         assert!(!is_retryable(&err));
     }
+
+    #[test]
+    fn mask_proxy_strips_auth() {
+        let masked = mask_proxy("socks5://user:pass@proxy.example.com:1080");
+        assert_eq!(masked, "socks5://***@proxy.example.com:1080");
+    }
+
+    #[test]
+    fn mask_proxy_no_auth() {
+        let masked = mask_proxy("http://proxy.example.com:8080");
+        assert_eq!(masked, "http://***@proxy.example.com:8080");
+    }
+
+    #[test]
+    fn mask_proxy_invalid() {
+        let masked = mask_proxy("not a url");
+        assert_eq!(masked, "***");
+    }
 }
 
 #[cfg(test)]
@@ -543,6 +583,9 @@ mod integration_tests {
         assert_eq!(page.status, 200);
         assert!(page.final_url.starts_with("http://127.0.0.1:"));
         assert!(page.duration_ms > 0);
+        assert_eq!(page.attempts, 1);
+        assert_eq!(page.emulation_used, None);
+        assert_eq!(page.proxy_used, None);
     }
 
     #[tokio::test]
@@ -581,7 +624,7 @@ mod integration_tests {
     }
 
     #[tokio::test]
-    async fn fetch_connects_with_browser_emulation() {
+    async fn fetch_records_emulation() {
         let (addr, _handle) = spawn_server(200, "<html>ok</html>").await;
         let client = PageClient::builder()
             .browser(wreq_util::Emulation::Chrome131)
@@ -589,6 +632,10 @@ mod integration_tests {
             .build();
         let result = client.fetch(&addr).await;
         assert!(result.is_ok());
+        let page = result.unwrap();
+        assert!(page.emulation_used.is_some());
+        assert!(page.emulation_used.unwrap().contains("Chrome"));
+        assert_eq!(page.attempts, 1);
     }
 
     #[tokio::test]

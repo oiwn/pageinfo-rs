@@ -6,8 +6,10 @@ mod client;
 mod help;
 mod html;
 mod http_display;
+mod output;
 mod resolve;
 mod skills;
+use output::RenderOutput;
 
 /// CLI tool to research web pages
 #[derive(Parser, Debug)]
@@ -55,15 +57,12 @@ enum Commands {
     Links {
         /// URL to analyze
         url: String,
-        /// Show only internal (inbound) links
-        #[arg(long)]
-        inbound: bool,
-        /// Show only external (outbound) links
-        #[arg(long)]
-        outbound: bool,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
+        /// Link filter: all, internal, or external
+        #[arg(long, default_value = "all", value_parser = ["all", "internal", "external"])]
+        filter: String,
+        /// Output format: text, json, or toon
+        #[arg(long, default_value = "text", value_parser = ["text", "json", "toon"])]
+        format: String,
         /// Ignore cache and do not write fetched page to cache
         #[arg(long, conflicts_with = "refresh")]
         no_cache: bool,
@@ -75,9 +74,12 @@ enum Commands {
     Meta {
         /// URL to analyze
         url: String,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
+        /// Metadata verbosity: main, extended, or all
+        #[arg(long, default_value = "main", value_parser = ["main", "extended", "all"])]
+        verbosity: String,
+        /// Output format: text, json, or toon
+        #[arg(long, default_value = "text", value_parser = ["text", "json", "toon"])]
+        format: String,
         /// Ignore cache and do not write fetched page to cache
         #[arg(long, conflicts_with = "refresh")]
         no_cache: bool,
@@ -103,12 +105,9 @@ enum Commands {
     Text {
         /// URL to analyze
         url: String,
-        /// Output format: text (default) or markdown
-        #[arg(long, default_value = "text")]
+        /// Output format: text, json, or toon
+        #[arg(long, default_value = "text", value_parser = ["text", "json", "toon"])]
         format: String,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
         /// Ignore cache and do not write fetched page to cache
         #[arg(long, conflicts_with = "refresh")]
         no_cache: bool,
@@ -200,9 +199,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Links {
             url,
-            inbound,
-            outbound,
-            json,
+            filter,
+            format,
             no_cache,
             refresh,
         } => {
@@ -211,15 +209,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .await?;
             let page =
                 analyzer::PageInfo::from_fetch_result(&resolved.fetch_result)?;
-            if *json {
-                println!("{}", page.links_json(*inbound, *outbound));
-            } else {
-                println!("{}", page.format_links_for_llm());
-            }
+            let filter = analyzer::link::LinkFilter::parse(filter)
+                .unwrap_or(analyzer::link::LinkFilter::All);
+            let format = output::OutputFormat::parse(format)
+                .unwrap_or(output::OutputFormat::Text);
+            println!("{}", page.links_output(filter).render(format));
         }
         Commands::Meta {
             url,
-            json,
+            verbosity,
+            format,
             no_cache,
             refresh,
         } => {
@@ -228,11 +227,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .await?;
             let page =
                 analyzer::PageInfo::from_fetch_result(&resolved.fetch_result)?;
-            if *json {
-                println!("{}", page.meta_json());
-            } else {
-                println!("{}", page.format_meta_for_llm());
-            }
+            let verbosity = analyzer::MetaVerbosity::parse(verbosity)
+                .unwrap_or(analyzer::MetaVerbosity::Main);
+            let format = output::OutputFormat::parse(format)
+                .unwrap_or(output::OutputFormat::Text);
+            println!("{}", page.meta_output(verbosity).render(format));
         }
         Commands::Json {
             url,
@@ -254,7 +253,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Commands::Text {
             url,
             format,
-            json,
             no_cache,
             refresh,
         } => {
@@ -263,12 +261,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .await?;
             let page =
                 analyzer::PageInfo::from_fetch_result(&resolved.fetch_result)?;
-            let as_markdown = format == "markdown";
-            if *json {
-                println!("{}", page.text_json(as_markdown));
-            } else {
-                println!("{}", page.format_text(as_markdown));
-            }
+            let format = output::OutputFormat::parse(format)
+                .unwrap_or(output::OutputFormat::Text);
+            println!("{}", page.text_output().render(format));
         }
         Commands::Http { url } => {
             let parsed = url::Url::parse(url)?;
@@ -357,6 +352,15 @@ fn format_fetch_markdown(resolved: &resolve::ResolveOutput) -> String {
     out.push_str(&format!("- **Final URL:** {}\n", r.final_url));
     out.push_str(&format!("- **Status:** {}\n", r.status));
     out.push_str(&format!("- **Duration:** {}ms\n", r.duration_ms));
+    if let Some(ref emu) = r.emulation_used {
+        out.push_str(&format!("- **Emulation:** {emu}\n"));
+    }
+    if let Some(ref proxy) = r.proxy_used {
+        out.push_str(&format!("- **Proxy:** {proxy}\n"));
+    }
+    if r.attempts > 1 {
+        out.push_str(&format!("- **Attempts:** {}\n", r.attempts));
+    }
     out.push_str(&format!(
         "- **Cached:** {}\n",
         if resolved.from_cache { "yes" } else { "no" }
@@ -378,6 +382,9 @@ fn format_fetch_json(resolved: &resolve::ResolveOutput) -> String {
         "final_url": r.final_url,
         "status": r.status,
         "duration_ms": r.duration_ms,
+        "emulation_used": r.emulation_used,
+        "proxy_used": r.proxy_used,
+        "attempts": r.attempts,
         "cached": resolved.from_cache,
         "body_size": r.body.len(),
         "headers": r.headers,
@@ -470,48 +477,146 @@ mod tests {
         match cli.command {
             Commands::Links {
                 url,
-                inbound,
-                outbound,
-                json,
+                filter,
+                format,
                 ..
             } => {
                 assert_eq!(url, "https://example.com");
-                assert!(!inbound);
-                assert!(!outbound);
-                assert!(!json);
+                assert_eq!(filter, "all");
+                assert_eq!(format, "text");
             }
             _ => panic!("expected links command"),
         }
     }
 
     #[test]
-    fn links_accepts_inbound() {
+    fn links_accepts_filter_internal() {
         let cli = Cli::try_parse_from([
             "pginf",
             "links",
             "https://example.com",
-            "--inbound",
+            "--filter",
+            "internal",
         ])
         .unwrap();
         match cli.command {
-            Commands::Links { inbound, .. } => assert!(inbound),
+            Commands::Links { filter, .. } => assert_eq!(filter, "internal"),
             _ => panic!("expected links command"),
         }
     }
 
     #[test]
-    fn links_accepts_outbound() {
+    fn links_accepts_filter_external() {
         let cli = Cli::try_parse_from([
+            "pginf",
+            "links",
+            "https://example.com",
+            "--filter",
+            "external",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Links { filter, .. } => assert_eq!(filter, "external"),
+            _ => panic!("expected links command"),
+        }
+    }
+
+    #[test]
+    fn links_accepts_format_json() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "links",
+            "https://example.com",
+            "--format",
+            "json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Links { format, .. } => {
+                assert_eq!(format, "json");
+            }
+            _ => panic!("expected links command"),
+        }
+    }
+
+    #[test]
+    fn links_accepts_format_toon() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "links",
+            "https://example.com",
+            "--format",
+            "toon",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Links { format, .. } => {
+                assert_eq!(format, "toon");
+            }
+            _ => panic!("expected links command"),
+        }
+    }
+
+    #[test]
+    fn links_rejects_invalid_format() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "links",
+            "https://example.com",
+            "--format",
+            "xml",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn links_rejects_invalid_filter() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "links",
+            "https://example.com",
+            "--filter",
+            "same-host",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn links_rejects_json_flag() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "links",
+            "https://example.com",
+            "--json",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn links_rejects_inbound_flag() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "links",
+            "https://example.com",
+            "--inbound",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn links_rejects_outbound_flag() {
+        let err = Cli::try_parse_from([
             "pginf",
             "links",
             "https://example.com",
             "--outbound",
         ])
-        .unwrap();
-        match cli.command {
-            Commands::Links { outbound, .. } => assert!(outbound),
-            _ => panic!("expected links command"),
-        }
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
     }
 
     #[test]
@@ -519,12 +624,88 @@ mod tests {
         let cli =
             Cli::try_parse_from(["pginf", "meta", "https://example.com"]).unwrap();
         match cli.command {
-            Commands::Meta { url, json, .. } => {
+            Commands::Meta {
+                url,
+                verbosity,
+                format,
+                ..
+            } => {
                 assert_eq!(url, "https://example.com");
-                assert!(!json);
+                assert_eq!(verbosity, "main");
+                assert_eq!(format, "text");
             }
             _ => panic!("expected meta command"),
         }
+    }
+
+    #[test]
+    fn meta_accepts_verbosity() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "meta",
+            "https://example.com",
+            "--verbosity",
+            "extended",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Meta { verbosity, .. } => {
+                assert_eq!(verbosity, "extended");
+            }
+            _ => panic!("expected meta command"),
+        }
+    }
+
+    #[test]
+    fn meta_accepts_format_json() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "meta",
+            "https://example.com",
+            "--format",
+            "json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Meta { format, .. } => {
+                assert_eq!(format, "json");
+            }
+            _ => panic!("expected meta command"),
+        }
+    }
+
+    #[test]
+    fn meta_rejects_invalid_format() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "meta",
+            "https://example.com",
+            "--format",
+            "xml",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn meta_rejects_json_flag() {
+        let err =
+            Cli::try_parse_from(["pginf", "meta", "https://example.com", "--json"])
+                .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn meta_rejects_invalid_verbosity() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "meta",
+            "https://example.com",
+            "--verbosity",
+            "verbose",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
     }
 
     #[test]
@@ -545,31 +726,65 @@ mod tests {
         let cli =
             Cli::try_parse_from(["pginf", "text", "https://example.com"]).unwrap();
         match cli.command {
-            Commands::Text {
-                url, format, json, ..
-            } => {
+            Commands::Text { url, format, .. } => {
                 assert_eq!(url, "https://example.com");
                 assert_eq!(format, "text");
-                assert!(!json);
             }
             _ => panic!("expected text command"),
         }
     }
 
     #[test]
-    fn text_accepts_markdown_format() {
+    fn text_accepts_format_json() {
         let cli = Cli::try_parse_from([
+            "pginf",
+            "text",
+            "https://example.com",
+            "--format",
+            "json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Text { format, .. } => assert_eq!(format, "json"),
+            _ => panic!("expected text command"),
+        }
+    }
+
+    #[test]
+    fn text_accepts_format_toon() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "text",
+            "https://example.com",
+            "--format",
+            "toon",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Text { format, .. } => assert_eq!(format, "toon"),
+            _ => panic!("expected text command"),
+        }
+    }
+
+    #[test]
+    fn text_rejects_invalid_format() {
+        let err = Cli::try_parse_from([
             "pginf",
             "text",
             "https://example.com",
             "--format",
             "markdown",
         ])
-        .unwrap();
-        match cli.command {
-            Commands::Text { format, .. } => assert_eq!(format, "markdown"),
-            _ => panic!("expected text command"),
-        }
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn text_rejects_json_flag() {
+        let err =
+            Cli::try_parse_from(["pginf", "text", "https://example.com", "--json"])
+                .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
     }
 
     #[test]
@@ -653,9 +868,9 @@ mod tests {
                 input_url: "https://example.com".to_string(),
                 final_url: "https://example.com".to_string(),
                 status: 200,
-                headers: std::collections::HashMap::new(),
                 body: "<html></html>".to_string(),
                 duration_ms: 42,
+                ..Default::default()
             },
             from_cache: false,
         };
@@ -672,9 +887,9 @@ mod tests {
                 input_url: "https://example.com".to_string(),
                 final_url: "https://example.com".to_string(),
                 status: 200,
-                headers: std::collections::HashMap::new(),
                 body: "<html></html>".to_string(),
                 duration_ms: 42,
+                ..Default::default()
             },
             from_cache: false,
         };

@@ -15,19 +15,21 @@ structure, metadata, and embedded data from a page without a browser.
 pginf fetch <url>                           # fetch + cache, print HTTP metadata
 pginf fetch <url> --json                    # same, JSON output
 pginf fetch <url> --refresh                 # bypass cache, re-fetch
-pginf links <url>                           # URL groups, path depth, samples
-pginf links <url> --inbound                 # internal links only
-pginf links <url> --outbound                # external links only
-pginf links <url> --json
+pginf links <url>                           # processed links + URL summaries
+pginf links <url> --filter internal         # internal links only
+pginf links <url> --filter external         # external links only
+pginf links <url> --format json
+pginf links <url> --format toon
 pginf meta <url>                            # curated metadata (title, lang, meta tags)
-pginf meta <url> --json
+pginf meta <url> --format json
+pginf meta <url> --format toon
 pginf json <url>                            # structured data (JSON-LD, Next.js, inline)
 pginf json <url> --json
 pginf text <url>                            # extracted text content (plain text)
-pginf text <url> --format markdown          # extracted content as markdown
-pginf text <url> --json
-pginf html <url>                            # full HTML
-pginf html <url> -s "div.article"           # elements matching CSS selector
+pginf text <url> --format json
+pginf text <url> --format toon
+pginf html -u <url>                         # full HTML
+pginf html -u <url> -s "div.article"        # elements matching CSS selector
 pginf http -u <url>                         # raw request/response debug
 pginf install skills local                  # install skill to <project>/.agents/skills/pginf/
 pginf install skills global                 # install skill to ~/.agents/skills/pginf/
@@ -58,8 +60,8 @@ Available browser names: `chrome137`, `chrome136`, ..., `chrome100`, `firefox`,
 
 ## Output
 
-All commands default to markdown output. Pass `--json` for machine-readable
-JSON output.
+Commands default to text output. `links`, `meta`, and `text` use
+`--format text|json|toon`. `fetch` and `json` still use `--json`.
 
 ## Caching
 
@@ -72,10 +74,10 @@ is not already cached.
 ## Typical workflow
 
 1. `pginf fetch <url>` — load the page into cache, inspect HTTP metadata
-2. `pginf links <url>` — understand URL structure and site sections
-3. `pginf meta <url>` — inspect curated metadata
+2. `pginf links <url> --format toon` — inspect processed links and URL summaries
+3. `pginf meta <url> --format toon` — inspect curated metadata
 4. `pginf json <url>` — check for structured data
-5. `pginf text <url>` — extract page content
+5. `pginf text <url> --format toon` — extract page content
 
 ## Library usage
 
@@ -91,6 +93,33 @@ let client = PageClient::builder()
 let result: FetchResult = client.fetch("https://example.com").await?;
 // result.input_url, result.final_url, result.status, result.headers, result.body, result.duration_ms
 ```
+
+### Link extraction
+
+```rust
+use pageinfo_rs::{extract_links, Link};
+use pageinfo_rs::dom_content_extraction::scraper::Html;
+use url::Url;
+
+let doc = Html::parse_document(&html_body);
+let base = Url::parse("https://example.com")?;
+
+// All links, normalized (lowercase host, no fragment)
+let links: Vec<Link> = extract_links(&doc, &base);
+
+// Internal links can be selected from processed links
+let internal: Vec<&Link> = links.iter().filter(|link| link.is_internal).collect();
+
+// Per-link normalization
+let mut link = links[0].clone();
+link.normalize();
+link.strip_tracking();
+link.is_asset();            // true for .css, .js, .png, etc.
+link.is_same_host(&base);   // exact host comparison
+```
+
+Also available: `extract_raw_links`, `extract_registered_domain`, `RawLink`,
+`LinkOptions`, `UrlFacts`, `DateKind`.
 
 Automatic browser fallback (Chrome136 → Firefox139 → Safari18.5) only
 triggers on 403/429/503. For WAFs using custom codes, set `.browser()`
