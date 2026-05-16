@@ -15,7 +15,7 @@ use output::RenderOutput;
 #[derive(Parser, Debug)]
 #[command(name = "pginf")]
 #[command(author = "oiwn <https://github.org/oiwn>")]
-#[command(version = "0.2")]
+#[command(version = "0.2.2")]
 #[command(about = "CLI tool to research web pages", long_about = None)]
 #[command(disable_help_subcommand = true)]
 struct Cli {
@@ -105,6 +105,23 @@ enum Commands {
     Text {
         /// URL to analyze
         url: String,
+        /// Output format: text, json, or toon
+        #[arg(long, default_value = "text", value_parser = ["text", "json", "toon"])]
+        format: String,
+        /// Ignore cache and do not write fetched page to cache
+        #[arg(long, conflicts_with = "refresh")]
+        no_cache: bool,
+        /// Refetch page and overwrite existing cache entry
+        #[arg(long)]
+        refresh: bool,
+    },
+    /// Show page headings (h1–h6)
+    Headings {
+        /// URL to analyze
+        url: String,
+        /// Heading verbosity: main (h1), extended (h1–h2), or all (h1–h6)
+        #[arg(long, default_value = "main", value_parser = ["main", "extended", "all"])]
+        verbosity: String,
         /// Output format: text, json, or toon
         #[arg(long, default_value = "text", value_parser = ["text", "json", "toon"])]
         format: String,
@@ -264,6 +281,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let format = output::OutputFormat::parse(format)
                 .unwrap_or(output::OutputFormat::Text);
             println!("{}", page.text_output().render(format));
+        }
+        Commands::Headings {
+            url,
+            verbosity,
+            format,
+            no_cache,
+            refresh,
+        } => {
+            let resolved =
+                resolve::resolve_page(url, &page_client, *no_cache, *refresh)
+                    .await?;
+            let page =
+                analyzer::PageInfo::from_fetch_result(&resolved.fetch_result)?;
+            let verbosity = analyzer::HeadingsVerbosity::parse(verbosity)
+                .unwrap_or(analyzer::HeadingsVerbosity::Main);
+            let format = output::OutputFormat::parse(format)
+                .unwrap_or(output::OutputFormat::Text);
+            println!("{}", page.headings_output(verbosity).render(format));
         }
         Commands::Http { url } => {
             let parsed = url::Url::parse(url)?;
@@ -878,6 +913,119 @@ mod tests {
         assert!(out.contains("200"));
         assert!(out.contains("42ms"));
         assert!(out.contains("example.com"));
+    }
+
+    #[test]
+    fn headings_parses_url() {
+        let cli = Cli::try_parse_from(["pginf", "headings", "https://example.com"])
+            .unwrap();
+        match cli.command {
+            Commands::Headings {
+                url,
+                verbosity,
+                format,
+                ..
+            } => {
+                assert_eq!(url, "https://example.com");
+                assert_eq!(verbosity, "main");
+                assert_eq!(format, "text");
+            }
+            _ => panic!("expected headings command"),
+        }
+    }
+
+    #[test]
+    fn headings_accepts_verbosity_extended() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "headings",
+            "https://example.com",
+            "--verbosity",
+            "extended",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Headings { verbosity, .. } => {
+                assert_eq!(verbosity, "extended");
+            }
+            _ => panic!("expected headings command"),
+        }
+    }
+
+    #[test]
+    fn headings_accepts_verbosity_all() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "headings",
+            "https://example.com",
+            "--verbosity",
+            "all",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Headings { verbosity, .. } => {
+                assert_eq!(verbosity, "all");
+            }
+            _ => panic!("expected headings command"),
+        }
+    }
+
+    #[test]
+    fn headings_accepts_format_json() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "headings",
+            "https://example.com",
+            "--format",
+            "json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Headings { format, .. } => assert_eq!(format, "json"),
+            _ => panic!("expected headings command"),
+        }
+    }
+
+    #[test]
+    fn headings_accepts_format_toon() {
+        let cli = Cli::try_parse_from([
+            "pginf",
+            "headings",
+            "https://example.com",
+            "--format",
+            "toon",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Headings { format, .. } => assert_eq!(format, "toon"),
+            _ => panic!("expected headings command"),
+        }
+    }
+
+    #[test]
+    fn headings_rejects_invalid_verbosity() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "headings",
+            "https://example.com",
+            "--verbosity",
+            "verbose",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn headings_rejects_invalid_format() {
+        let err = Cli::try_parse_from([
+            "pginf",
+            "headings",
+            "https://example.com",
+            "--format",
+            "xml",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidValue);
     }
 
     #[test]

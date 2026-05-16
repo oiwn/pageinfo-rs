@@ -6,6 +6,7 @@ pub mod html;
 pub mod http_display;
 pub mod output;
 
+pub use analyzer::HeadingsVerbosity;
 pub use analyzer::MetaVerbosity;
 pub use analyzer::PageInfo;
 pub use analyzer::date_kind::DateKind;
