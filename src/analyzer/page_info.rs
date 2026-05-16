@@ -4,6 +4,9 @@ use dom_content_extraction::scraper::{Html, Selector};
 use url::Url;
 
 use crate::analyzer::error::AnalyzerError;
+use crate::analyzer::headings::{
+    self, Headings, HeadingsOutput, HeadingsVerbosity,
+};
 use crate::analyzer::link::{self, Link, LinkFilter, LinkGroup, LinksOutput};
 use crate::analyzer::meta_tag::{
     MetaOutput, MetaTag, MetaVerbosity, extract_meta, select_meta,
@@ -33,6 +36,7 @@ pub struct PageInfo {
     pub url_facts: UrlFacts,
     pub feeds: Vec<String>,
     pub structured_data: StructuredDataSummary,
+    pub headings: Headings,
     pub text_content: Option<String>,
 }
 
@@ -95,6 +99,7 @@ impl PageInfo {
         let url_facts = UrlFacts::from_links(&links, &domain);
         let feeds = detect_feeds(&links);
         let structured_data = detect_structured_data(&document);
+        let headings = headings::extract_headings(&document);
         let text_content = dom_content_extraction::get_content(&document).ok();
         Ok(PageInfo {
             url: input_url.to_string(),
@@ -108,6 +113,7 @@ impl PageInfo {
             url_facts,
             feeds,
             structured_data,
+            headings,
             text_content,
         })
     }
@@ -316,6 +322,14 @@ impl PageInfo {
         serde_json::to_string_pretty(&obj).unwrap_or_default()
     }
 
+    pub fn headings_output(&self, verbosity: HeadingsVerbosity) -> HeadingsOutput {
+        HeadingsOutput {
+            url: self.final_url.clone(),
+            verbosity,
+            headings: headings::select_headings(&self.headings, verbosity),
+        }
+    }
+
     pub fn text_output(&self) -> TextOutput {
         TextOutput {
             url: self.final_url.clone(),
@@ -433,6 +447,9 @@ mod tests {
         <a href="/contact">Contact</a>
     </nav>
     <main>
+        <h1>Main Article Title</h1>
+        <h2>Section One</h2>
+        <h3>Subsection 1.1</h3>
         <p>This is the main content of the test page. It has enough text for content extraction to work properly. We need multiple sentences to ensure the dom-content-extraction crate can find something meaningful here. The quick brown fox jumps over the lazy dog.</p>
         <a href="https://example.com/news/article-1">First Article</a>
         <a href="https://example.com/news/article-2">Second Article</a>
@@ -688,5 +705,40 @@ mod tests {
         let mut result = fake_fetch_result();
         result.final_url = "not a url".to_string();
         assert!(PageInfo::from_fetch_result(&result).is_err());
+    }
+
+    #[test]
+    fn from_cached_page_extracts_headings() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        assert_eq!(page.headings.h1, vec!["Main Article Title"]);
+        assert_eq!(page.headings.h2, vec!["Section One"]);
+        assert_eq!(page.headings.h3, vec!["Subsection 1.1"]);
+    }
+
+    #[test]
+    fn headings_output_main_shows_h1_only() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        let out = page.headings_output(HeadingsVerbosity::Main);
+        assert_eq!(out.headings.h1, vec!["Main Article Title"]);
+        assert!(out.headings.h2.is_empty());
+        assert!(out.headings.h3.is_empty());
+    }
+
+    #[test]
+    fn headings_output_extended_shows_h1_h2() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        let out = page.headings_output(HeadingsVerbosity::Extended);
+        assert_eq!(out.headings.h1, vec!["Main Article Title"]);
+        assert_eq!(out.headings.h2, vec!["Section One"]);
+        assert!(out.headings.h3.is_empty());
+    }
+
+    #[test]
+    fn headings_output_all_shows_all() {
+        let page = PageInfo::from_cached_page(&fake_cached_page()).unwrap();
+        let out = page.headings_output(HeadingsVerbosity::All);
+        assert_eq!(out.headings.h1, vec!["Main Article Title"]);
+        assert_eq!(out.headings.h2, vec!["Section One"]);
+        assert_eq!(out.headings.h3, vec!["Subsection 1.1"]);
     }
 }

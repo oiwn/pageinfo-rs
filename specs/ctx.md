@@ -1,79 +1,71 @@
 # Current task context
 
-## Current state
+# Description
 
-The shared output migration is complete for:
+Add a `Headings` struct and `headings` field to `PageInfo` with 3-level verbosity filtering, following the `MetaVerbosity` pattern in `src/analyzer/meta_tag.rs`.
 
-- `pginf meta <url> --format text|json|toon`
-- `pginf links <url> --filter all|internal|external --format text|json|toon`
-- `pginf text <url> --format text|json|toon`
+## Design
 
-Old flags are intentionally rejected for migrated commands:
+### Data
 
-- `meta --json`
-- `links --json`
-- `links --inbound`
-- `links --outbound`
-- `text --json`
-- `text --format markdown`
-
-`links` now preserves raw DOM evidence (`RawLink.href` / `Link.raw_url`) and
-renders processed absolute `Link.url` rows. `UrlFacts` groups/depth/utility
-URLs remain summary evidence.
-
-`text` now renders from typed `TextOutput` with:
-
-```json
-{
-  "url": "https://example.com",
-  "content": "...",
-  "content_length": 123
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Headings {
+    pub h1: Vec<String>,
+    pub h2: Vec<String>,
+    pub h3: Vec<String>,
+    pub h4: Vec<String>,
+    pub h5: Vec<String>,
+    pub h6: Vec<String>,
 }
 ```
 
-Reference verification URL for text:
+- `Headings` stored on `PageInfo` — all 6 levels extracted during `from_raw_html`
+- New file: `src/analyzer/headings.rs` with `Headings`, `HeadingsOutput`, `HeadingsVerbosity`, extraction, selection, and `RenderOutput`
 
-```bash
-cargo run --quiet -- text https://exodata.space/docs --format json
-cargo run --quiet -- text https://exodata.space/docs --format toon
+### Verbosity
+
+Follows the same pattern as `MetaVerbosity` (own enum, same `parse`/`as_str` methods):
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadingsVerbosity {
+    Main,
+    Extended,
+    All,
+}
 ```
 
-## Next release work
+| Level      | Levels shown |
+|------------|-------------|
+| `main`     | h1          |
+| `extended` | h1, h2      |
+| `all`      | h1–h6       |
 
-1. Migrate `pginf fetch` to the shared output pattern.
-   - Prefer `--format text|json|toon`.
-   - Preserve existing fetch metadata shape: input URL, final URL, status,
-     duration, cache status, headers, body size, emulation/proxy/attempts.
+Selection function `select_headings(headings, verbosity)` filters by level, returns a new `Headings` with empty vecs for excluded levels.
 
-2. Migrate `pginf json` to typed output.
-   - Replace the current summary-only JSON path with a typed command output.
-   - Decide whether this release should expose parsed JSON-LD / Next.js payloads
-     or only preserve the current counts/signals.
+### Output
 
-3. Decide what to do with `pginf html`.
-   - Option A: keep it as a raw/debug command with selector support.
-   - Option B: add shared `--format text|json|toon` rendering for selected
-     elements.
-
-4. Revisit docs and installed skill after the remaining command migrations.
-   - `README.md`
-   - `CHANGELOG.md`
-   - `skills/pginf.md`
-   - built-in help in `src/help.rs`
-
-## Verification baseline
-
-Run after each command migration:
-
-```bash
-cargo fmt
-cargo test
+```rust
+pub struct HeadingsOutput {
+    pub url: String,
+    pub verbosity: HeadingsVerbosity,
+    pub headings: Headings,
+}
 ```
 
-Manual smoke checks:
+`RenderOutput` impl renders text as `## Headings\n\n### h1\n- ...` etc (skip levels with no entries). JSON/toon follow the same pattern as `MetaOutput`.
 
-```bash
-cargo run --quiet -- meta https://exodata.space/docs --format json
-cargo run --quiet -- links 'https://exodata.space/exoplanets/TOI-7009%20b' --format toon
-cargo run --quiet -- text https://exodata.space/docs --format json
-```
+### Integration
+
+- `PageInfo::from_raw_html` — extract headings from parsed `Html` document
+- `PageInfo::headings_output(verbosity)` — returns `HeadingsOutput`
+- `PageInfo::format_for_llm` — include headings in the LLM summary
+- Update `FAKE_HTML` test fixture with heading elements
+- Add tests: extraction, verbosity filtering, output rendering
+
+## Files to touch
+
+1. **New**: `src/analyzer/headings.rs`
+2. **Edit**: `src/analyzer/page_info.rs` — add `headings` field, extraction call, output method
+3. **Edit**: `src/analyzer/mod.rs` or parent module — `pub mod headings`
