@@ -99,7 +99,7 @@ Some pages like interfax could be in old encoding in dom-context-extraction we u
 
 ## Raname temp dir into the "pginf"
 
-## Need to update "wreq" to 6
+## Downgraded "wreq" to 5.3, "wreq-util" to 2.2.6
 
 ## Update dom-content-extraction
 

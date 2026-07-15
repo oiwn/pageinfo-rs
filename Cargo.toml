@@ -36,5 +36,5 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toon-format = "0.4.5"
 url = { version = "2", features = ["serde"] }
-wreq = "6.0.0-rc.28"
-wreq-util = "3.0.0-rc.10"
+wreq = "5.3"
+wreq-util = "2.2.6"

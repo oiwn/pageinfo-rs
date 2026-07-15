@@ -63,7 +63,7 @@
 - Cache dir renamed from `.pageinfo/` to `.pginf/`.
 - All help topics updated to reflect new command surface.
 - Behavioral guidelines added to `AGENTS.md`.
-- Dependencies: wreq 6, wreq-util 3, dirs 6.
+- Dependencies: wreq 5, wreq-util 2, dirs 6.
 
 ## v0.1.2
 

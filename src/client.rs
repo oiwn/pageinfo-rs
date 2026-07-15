@@ -209,7 +209,7 @@ impl PageClient {
             });
         }
 
-        let final_url = response.uri().to_string();
+        let final_url = response.url().to_string();
         let headers: HashMap<String, String> = response
             .headers()
             .iter()

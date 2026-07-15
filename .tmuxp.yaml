@@ -6,7 +6,7 @@ windows:
     start-directory: ./
     panes:
       - shell_command:
-        - helix
+        - hx
   - window_name: agent
     start-directory: ./
     panes:
@@ -16,12 +16,12 @@ windows:
     start-directory: ./
     panes:
       - shell_command:
-        - clear
+        - eza -l
   - window_name: cmd2
     start-directory: ./
     panes:
       - shell_command:
-        - clear
+        - eza -T
   - window_name: yazi
     panes:
       - shell_command:
