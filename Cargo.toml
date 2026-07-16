@@ -1,6 +1,6 @@
 [package]
 name = "pageinfo-rs"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "CLI tool that analyzes web pages and produces structured LLM-friendly output"
 license = "GPL-3.0"
