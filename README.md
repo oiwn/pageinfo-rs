@@ -10,7 +10,7 @@ CLI tool and library for researching web pages. Built to help LLMs inspect sites
 
 HTTP-only. No browser automation. Uses `wreq` with TLS fingerprinting via `wreq-util` for browser emulation.
 
-JS rendering is available as an opt-in feature via the [obscura](https://github.com/h4ckf0r0day/obscura) headless browser engine (`cargo install pageinfo-rs --features render`).
+JS rendering is available as an opt-in feature via the [obscura](https://github.com/h4ckf0r0day/obscura) headless browser engine (`--features render`).
 
 ## What It Does
 
@@ -26,7 +26,13 @@ Fetches a page and exposes structural evidence:
 ## Install
 
 ```bash
-cargo install pageinfo-rs
+cargo install --git https://github.com/oiwn/pageinfo-rs
+```
+
+With JS rendering (compiles V8 from source):
+
+```bash
+cargo install --git https://github.com/oiwn/pageinfo-rs --features render
 ```
 
 Binary name: `pginf`. Library crate: `pageinfo_rs`.
@@ -34,7 +40,7 @@ Binary name: `pginf`. Library crate: `pageinfo_rs`.
 ## Update
 
 ```bash
-cargo install pageinfo-rs --force
+cargo install --git https://github.com/oiwn/pageinfo-rs --force
 ```
 
 After updating, re-run `pginf install skills local` (or `global`) to refresh the LLM skill file.
