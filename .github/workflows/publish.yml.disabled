@@ -1,0 +1,33 @@
+# Publish to crates.io — DISABLED
+#
+# This workflow is disabled because the `render` feature depends on
+# obscura (https://github.com/h4ckf0r0day/obscura) via a git dependency,
+# which cannot be published to crates.io. Obscura is not published as a
+# library crate in a compatible version, and it compiles V8 from source.
+#
+# Install from GitHub instead:
+#
+#   cargo install --git https://github.com/oiwn/pageinfo-rs
+#   cargo install --git https://github.com/oiwn/pageinfo-rs --features render
+#
+# To re-enable: if obscura is ever published to crates.io as a library,
+# or the `render` feature is removed, rename this file back to `publish.yml`.
+
+name: Publish (disabled)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-crates:
+    name: Publish to crates.io (disabled — see file header)
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Publishing to crates.io is disabled."
+          echo "See file header for details."
+          exit 1
