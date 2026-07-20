@@ -5,6 +5,8 @@ pub mod help;
 pub mod html;
 pub mod http_display;
 pub mod output;
+#[cfg(feature = "render")]
+pub mod renderer;
 
 pub use analyzer::HeadingsVerbosity;
 pub use analyzer::MetaVerbosity;

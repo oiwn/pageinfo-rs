@@ -34,6 +34,11 @@
 - `extract_links()` now normalizes all links by default (lowercase host, no fragment).
 - `FetchResult` now records `emulation_used`, `proxy_used` (masked), and `attempts` for fetch transparency.
 - `analyzer::link`, `analyzer::url_facts`, `analyzer::date_kind` modules are now `pub mod`.
+- `pginf render` subcommand (feature-gated behind `--features render`) uses the
+  obscura headless browser engine to render JS-heavy pages. Compiles V8 from
+  source, so it is opt-in only.
+- Switched tokio runtime to `current_thread` flavor for obscura/V8 compatibility.
+- Downgraded wreq to 5.3, wreq-util to 2.2.6 (stable releases).
 
 ## v0.2.0
 
