@@ -42,6 +42,7 @@ Top-level commands (no nesting):
 - `text <url>` — extracted text content via dom-content-extraction
 - `html <url>` — raw HTML, optional CSS selector filter
 - `http <url>` — low-level HTTP debug (full request/response)
+- `render <url>` — JS rendering via obscura (feature-gated: `--features render`)
 
 All commands support `--json` for machine-readable output. Default is markdown.
 
@@ -57,7 +58,7 @@ File-based page cache in `.pginf/`. Stores fetch metadata, response headers, raw
 
 ### Done
 
-- Flat command structure: `fetch`, `links`, `meta`, `json`, `text`, `html`, `http`
+- Flat command structure: `fetch`, `links`, `meta`, `json`, `text`, `html`, `http`, `render` (feature-gated)
 - `--json` flag on all analysis commands
 - `PageClient` decoupled from cache (returns `FetchResult`)
 - `resolve_page()` shared helper for cache-or-fetch logic

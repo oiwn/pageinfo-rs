@@ -10,6 +10,8 @@ CLI tool and library for researching web pages. Built to help LLMs inspect sites
 
 HTTP-only. No browser automation. Uses `wreq` with TLS fingerprinting via `wreq-util` for browser emulation.
 
+JS rendering is available as an opt-in feature via the [obscura](https://github.com/h4ckf0r0day/obscura) headless browser engine (`cargo install pageinfo-rs --features render`).
+
 ## What It Does
 
 Fetches a page and exposes structural evidence:
@@ -28,6 +30,14 @@ cargo install pageinfo-rs
 ```
 
 Binary name: `pginf`. Library crate: `pageinfo_rs`.
+
+## Update
+
+```bash
+cargo install pageinfo-rs --force
+```
+
+After updating, re-run `pginf install skills local` (or `global`) to refresh the LLM skill file.
 
 ## Library Usage
 
@@ -55,27 +65,10 @@ use url::Url;
 let doc = Html::parse_document(&html_body);
 let base = Url::parse("https://example.com")?;
 
-// All links, normalized (lowercase host, no fragment)
 let links: Vec<Link> = extract_links(&doc, &base);
-
-// Internal links can be selected from processed links
-let internal: Vec<&Link> = links.iter().filter(|link| link.is_internal).collect();
-
-// Manual normalization/tracking on individual links
-let mut link = links[0].clone();
-link.normalize();       // "https://example.com/page?utm_source=x"
-link.strip_tracking();  // "https://example.com/page"
-
-// Classification helpers
-link.is_asset();            // true for .css, .js, .png, .svg, .woff2, etc.
-link.is_same_host(&base);   // exact host match, not registered domain
 ```
 
 Also exported: `extract_registered_domain`, `UrlFacts`, `DateKind`.
-
-`pageinfo_rs` re-exports `Emulation`, `wreq`, and `wreq_util` — no extra direct dependencies needed.
-
-`FetchResult` includes fetch transparency fields: `emulation_used`, `proxy_used` (masked), `attempts`.
 
 Features:
 
@@ -183,8 +176,27 @@ pginf help meta
 pginf help json
 pginf help text
 pginf help http
+pginf help render
 pginf help tool
 ```
+
+### `render` *(requires `--features render`)*
+
+Render JS-heavy pages using the [obscura](https://github.com/h4ckf0r0day/obscura) headless browser engine. Not available in default builds.
+
+```bash
+cargo run --features render -- render https://example.com
+cargo run --features render -- render https://example.com --format json
+cargo run --features render -- render https://example.com --selector "main"
+cargo run --features render -- render https://example.com --eval "document.title"
+```
+
+| Flag | Description |
+|---|---|
+| `--selector <css>` | Filter rendered HTML by CSS selector |
+| `--eval <js>` | JavaScript expression to evaluate on the page |
+| `--settle-ms <n>` | Milliseconds to let async work settle (default: 2000) |
+| `--format text\|json\|toon` | Output format |
 
 ## Global Flags
 
@@ -211,6 +223,8 @@ pginf install skills local     # project-local
 pginf install skills global    # user-level
 ```
 
+After upgrading pginf, re-run the install command to update the skill file. It detects the `installed-by: pginf` marker and overwrites safely.
+
 ## Cache
 
 `fetch`, `links`, `meta`, `json`, `text`, and `html` cache fetched pages
@@ -221,23 +235,6 @@ Cache behavior:
 - default: read cache on hit, fetch on miss, store result
 - `--refresh`: refetch and overwrite cache entry
 - `--no-cache`: skip cache read and write
-
-## Architecture
-
-```
-src/
-  client.rs          PageClient — HTTP fetching, proxy, browser emulation, fallback
-  http_display.rs    HTTP transaction types and formatting (for `http` command)
-  output.rs          Shared `text|json|toon` rendering traits
-  skills.rs          Embedded skill file + install logic (for `install` command)
-  analyzer.rs        Page analysis: link extraction, URL grouping, metadata, text
-  cache/             File-based page cache (.pginf/)
-  html.rs            Legacy page info extraction (used by `http` command)
-  help.rs            Built-in help text
-  main.rs            CLI entry point
-```
-
-All HTTP fetching flows through `PageClient`. No raw `wreq::Client` construction outside of `client.rs`.
 
 ## License
 
