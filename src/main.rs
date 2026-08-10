@@ -7,8 +7,6 @@ mod help;
 mod html;
 mod http_display;
 mod output;
-#[cfg(feature = "render")]
-mod renderer;
 mod resolve;
 mod skills;
 use output::RenderOutput;
@@ -160,24 +158,6 @@ enum Commands {
         #[command(subcommand)]
         command: InstallCommand,
     },
-    /// Render JS-heavy pages using obscura headless browser (requires --features render)
-    #[cfg(feature = "render")]
-    Render {
-        /// URL to render
-        url: String,
-        /// CSS selector to filter rendered HTML
-        #[arg(long)]
-        selector: Option<String>,
-        /// JavaScript expression to evaluate on the page
-        #[arg(long)]
-        eval: Option<String>,
-        /// Milliseconds to let async work settle after page load
-        #[arg(long, default_value = "2000")]
-        settle_ms: u64,
-        /// Output format: text, json, or toon
-        #[arg(long, default_value = "text", value_parser = ["text", "json", "toon"])]
-        format: String,
-    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -197,7 +177,7 @@ enum SkillsTarget {
     Global,
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -394,29 +374,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 },
             },
         },
-        #[cfg(feature = "render")]
-        Commands::Render {
-            url,
-            selector,
-            eval,
-            settle_ms,
-            format,
-        } => {
-            let opts = renderer::RenderOptions {
-                proxy: cli.proxy.clone(),
-                selector: selector.clone(),
-                eval: eval.clone(),
-                settle_ms: *settle_ms,
-            };
-            match renderer::render_page(url, &opts).await {
-                Ok(result) => {
-                    let format = output::OutputFormat::parse(format)
-                        .unwrap_or(output::OutputFormat::Text);
-                    println!("{}", result.render(format));
-                }
-                Err(e) => eprintln!("Render failed: {e}"),
-            }
-        }
     };
 
     Ok(())

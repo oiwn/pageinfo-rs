@@ -1,3 +1,1 @@
-# Current task context
-
-(none)
+# Current Task Context

@@ -1,6 +1,6 @@
 [package]
 name = "pageinfo-rs"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 description = "CLI tool that analyzes web pages and produces structured LLM-friendly output"
 license = "GPL-3.0"
@@ -21,9 +21,6 @@ path = "src/main.rs"
 name = "pageinfo_rs"
 path = "src/lib.rs"
 
-[features]
-render = ["dep:obscura"]
-
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 comfy-table = "7"
@@ -41,4 +38,3 @@ toon-format = "0.4.5"
 url = { version = "2", features = ["serde"] }
 wreq = "5.3"
 wreq-util = "2.2.6"
-obscura = { git = "https://github.com/h4ckf0r0day/obscura", tag = "v0.1.10", optional = true }

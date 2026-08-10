@@ -1,5 +1,11 @@
 # Future Ideas
 
+## Servo rendering backend
+
+Consider Servo as a far-future experimental rendering backend after its
+embedding and web-compatibility story is mature enough for this project. This
+is not committed work.
+
 ## `pginf install-skill` subcommand
 
 Add a CLI subcommand that installs the LLM skill file to popular agent configs:

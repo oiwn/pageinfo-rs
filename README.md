@@ -10,8 +10,6 @@ CLI tool and library for researching web pages. Built to help LLMs inspect sites
 
 HTTP-only. No browser automation. Uses `wreq` with TLS fingerprinting via `wreq-util` for browser emulation.
 
-JS rendering is available as an opt-in feature via the [obscura](https://github.com/h4ckf0r0day/obscura) headless browser engine (`--features render`).
-
 ## What It Does
 
 Fetches a page and exposes structural evidence:
@@ -26,13 +24,7 @@ Fetches a page and exposes structural evidence:
 ## Install
 
 ```bash
-cargo install --git https://github.com/oiwn/pageinfo-rs
-```
-
-With JS rendering (compiles V8 from source):
-
-```bash
-cargo install --git https://github.com/oiwn/pageinfo-rs --features render
+cargo install pageinfo-rs
 ```
 
 Binary name: `pginf`. Library crate: `pageinfo_rs`.
@@ -40,7 +32,7 @@ Binary name: `pginf`. Library crate: `pageinfo_rs`.
 ## Update
 
 ```bash
-cargo install --git https://github.com/oiwn/pageinfo-rs --force
+cargo install pageinfo-rs --force
 ```
 
 After updating, re-run `pginf install skills local` (or `global`) to refresh the LLM skill file.
@@ -182,27 +174,8 @@ pginf help meta
 pginf help json
 pginf help text
 pginf help http
-pginf help render
 pginf help tool
 ```
-
-### `render` *(requires `--features render`)*
-
-Render JS-heavy pages using the [obscura](https://github.com/h4ckf0r0day/obscura) headless browser engine. Not available in default builds.
-
-```bash
-cargo run --features render -- render https://example.com
-cargo run --features render -- render https://example.com --format json
-cargo run --features render -- render https://example.com --selector "main"
-cargo run --features render -- render https://example.com --eval "document.title"
-```
-
-| Flag | Description |
-|---|---|
-| `--selector <css>` | Filter rendered HTML by CSS selector |
-| `--eval <js>` | JavaScript expression to evaluate on the page |
-| `--settle-ms <n>` | Milliseconds to let async work settle (default: 2000) |
-| `--format text\|json\|toon` | Output format |
 
 ## Global Flags
 
