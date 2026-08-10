@@ -8,7 +8,6 @@ pub fn render(topic: Option<&str>) -> String {
         Some(topic) if topic == "json" => json_help(),
         Some(topic) if topic == "text" => text_help(),
         Some(topic) if topic == "http" => http_help(),
-        Some(topic) if topic == "render" => render_help(),
         Some(topic) if topic == "tool" => tool_help(),
         Some(topic) => unknown_help(&topic),
     }
@@ -236,44 +235,11 @@ fn tool_help() -> String {
     .join("\n")
 }
 
-fn render_help() -> String {
-    [
-        "# `pginf render`",
-        "",
-        "Render JS-heavy pages using the obscura headless browser engine.",
-        "",
-        "Requires building with `--features render` (compiles V8 from source).",
-        "",
-        "## When To Use It",
-        "",
-        "- SPAs and JS-rendered sites that return empty shells via plain HTTP",
-        "- pages where `pginf fetch` returns no meaningful content",
-        "- when you need to evaluate JavaScript on a page",
-        "",
-        "## Flags",
-        "",
-        "- `--selector <css>`: filter rendered HTML by CSS selector",
-        "- `--eval <js>`: JavaScript expression to evaluate",
-        "- `--settle-ms <n>`: milliseconds to let async work settle (default: 2000)",
-        "- `--format text|json|toon`: output format",
-        "- `--proxy <url>`: proxy (global flag)",
-        "- `--timeout <secs>`: timeout (global flag)",
-        "",
-        "## Examples",
-        "",
-        "- `pginf render https://example.com`",
-        "- `pginf render https://example.com --format json`",
-        "- `pginf render https://example.com --selector \".main-content\"`",
-        "- `pginf render https://example.com --eval \"document.title\"`",
-    ]
-    .join("\n")
-}
-
 fn unknown_help(topic: &str) -> String {
     [
         format!("# Unknown Help Topic: `{topic}`"),
         "".to_string(),
-        "Available topics: `fetch`, `links`, `meta`, `json`, `text`, `http`, `render`, `tool`".to_string(),
+        "Available topics: `fetch`, `links`, `meta`, `json`, `text`, `http`, `tool`".to_string(),
     ]
     .join("\n")
 }
@@ -305,12 +271,5 @@ mod tests {
     fn unknown_topic_returns_suggestions() {
         let help = render(Some("nonexistent"));
         assert!(help.contains("Unknown"));
-    }
-
-    #[test]
-    fn render_help_returns_content() {
-        let help = render(Some("render"));
-        assert!(help.contains("obscura"));
-        assert!(help.contains("--selector"));
     }
 }
