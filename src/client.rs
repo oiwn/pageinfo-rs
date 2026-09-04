@@ -79,6 +79,7 @@ pub struct PageClient {
     fallback_browsers: Vec<wreq_util::Emulation>,
     max_retries: usize,
     timeout: Duration,
+    redirect: wreq::redirect::Policy,
 }
 
 impl Default for PageClient {
@@ -93,6 +94,7 @@ impl Default for PageClient {
             ],
             max_retries: 3,
             timeout: Duration::from_secs(30),
+            redirect: wreq::redirect::Policy::limited(10),
         }
     }
 }
@@ -193,12 +195,15 @@ impl PageClient {
         client: &wreq::Client,
         url: &Url,
     ) -> Result<FetchResult, ClientError> {
-        let response = client.get(url.as_str()).send().await.map_err(|e| {
-            ClientError::Request {
+        let response = client
+            .get(url.as_str())
+            .redirect(self.redirect.clone())
+            .send()
+            .await
+            .map_err(|e| ClientError::Request {
                 url: url.to_string(),
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
 
         let status = response.status().as_u16();
 
@@ -291,6 +296,7 @@ pub struct PageClientBuilder {
     fallback_browsers: Vec<wreq_util::Emulation>,
     max_retries: usize,
     timeout: Duration,
+    redirect: wreq::redirect::Policy,
 }
 
 impl PageClientBuilder {
@@ -305,6 +311,7 @@ impl PageClientBuilder {
             ],
             max_retries: 3,
             timeout: Duration::from_secs(30),
+            redirect: wreq::redirect::Policy::limited(10),
         }
     }
 
@@ -352,6 +359,17 @@ impl PageClientBuilder {
         self
     }
 
+    /// Set the redirect policy applied by `fetch()`.
+    ///
+    /// Default: `Policy::limited(10)`. `Policy::none()` surfaces the raw 3xx
+    /// response as a `ClientError::Fetch`. Ignored by `get_raw()`, which
+    /// always returns the first response un-followed.
+    #[allow(dead_code)]
+    pub fn redirect(mut self, policy: wreq::redirect::Policy) -> Self {
+        self.redirect = policy;
+        self
+    }
+
     pub fn build(self) -> PageClient {
         PageClient {
             proxy_url: self.proxy_url,
@@ -359,6 +377,7 @@ impl PageClientBuilder {
             fallback_browsers: self.fallback_browsers,
             max_retries: self.max_retries,
             timeout: self.timeout,
+            redirect: self.redirect,
         }
     }
 }
@@ -380,6 +399,20 @@ mod tests {
         assert!(client.browser.is_none());
         assert_eq!(client.fallback_browsers.len(), 3);
         assert_eq!(client.max_retries, 3);
+    }
+
+    #[test]
+    fn builder_default_redirect_policy_is_limited_10() {
+        let client = PageClient::builder().build();
+        assert_eq!(format!("{:?}", client.redirect), "Policy(Limit(10))");
+    }
+
+    #[test]
+    fn builder_custom_redirect_policy() {
+        let client = PageClient::builder()
+            .redirect(wreq::redirect::Policy::none())
+            .build();
+        assert_eq!(format!("{:?}", client.redirect), "Policy(None)");
     }
 
     #[test]
@@ -569,6 +602,42 @@ mod integration_tests {
         (format!("http://127.0.0.1:{port}"), handle)
     }
 
+    /// Serves a redirect on the first connection, then a 200 on the second.
+    async fn spawn_redirect_server(
+        redirect_status: u16,
+        location: &str,
+        final_body: &str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let location = location.to_string();
+        let final_body = final_body.to_string();
+        let handle = tokio::spawn(async move {
+            let responses = [
+                format!(
+                    "HTTP/1.1 {redirect_status} Moved\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                ),
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{final_body}",
+                    final_body.len()
+                ),
+            ];
+            for resp in responses {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let mut buf = vec![0u8; 4096];
+                let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                let _ = tokio::io::AsyncWriteExt::write_all(
+                    &mut stream,
+                    resp.as_bytes(),
+                )
+                .await;
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
     #[tokio::test]
     async fn fetch_200_returns_fetch_result() {
         let (addr, _handle) =
@@ -600,6 +669,36 @@ mod integration_tests {
         match result.unwrap_err() {
             ClientError::Fetch { status, .. } => assert_eq!(status, 404),
             other => panic!("expected Fetch error, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_follows_redirect_by_default() {
+        let (addr, _handle) =
+            spawn_redirect_server(302, "/final", "<html>moved</html>").await;
+        let client = PageClient::builder()
+            .timeout(Duration::from_secs(5))
+            .build();
+        let result = client.fetch(&addr).await;
+        assert!(result.is_ok());
+        let page = result.unwrap();
+        assert_eq!(page.status, 200);
+        assert_eq!(page.body, "<html>moved</html>");
+        assert!(page.final_url.ends_with("/final"));
+    }
+
+    #[tokio::test]
+    async fn fetch_with_none_policy_surfaces_redirect_status() {
+        let (addr, _handle) =
+            spawn_redirect_server(307, "/final", "<html>unreached</html>").await;
+        let client = PageClient::builder()
+            .redirect(wreq::redirect::Policy::none())
+            .timeout(Duration::from_secs(5))
+            .build();
+        let result = client.fetch(&addr).await;
+        match result {
+            Err(ClientError::Fetch { status, .. }) => assert_eq!(status, 307),
+            other => panic!("expected Fetch error, got {other:?}"),
         }
     }
 

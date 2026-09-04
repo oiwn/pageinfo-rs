@@ -20,6 +20,9 @@ Single entry point for all HTTP fetching. Returns `FetchResult` (no cache coupli
 - browser emulation via `wreq_util::Emulation` (TLS fingerprint + headers)
 - automatic fallback on 403/429/503/connection errors
 - configurable timeout
+- redirect following via per-request `wreq::redirect::Policy`
+  (default `limited(10)`, settable through `PageClientBuilder::redirect`;
+  `get_raw`/`http` command never follows)
 
 Re-exported as `pageinfo_rs::PageClient` and `pageinfo_rs::FetchResult` for library use.
 

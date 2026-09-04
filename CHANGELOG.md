@@ -25,6 +25,12 @@
 
 ### New features
 
+- `PageClient::fetch()` now follows HTTP redirects (default `Policy::limited(10)`);
+  `FetchResult.final_url` reflects the post-redirect URL.
+- `PageClientBuilder::redirect(wreq::redirect::Policy)` — full control from the
+  caller (`limited(n)`, `none()`, `custom(...)`). `Policy::none()` surfaces the raw
+  3xx as `ClientError::Fetch`. Ignored by `get_raw()` (`http` command keeps showing
+  the first hop).
 - Shared typed output/rendering system with `OutputFormat` and `RenderOutput`.
 - `pginf meta`, `pginf links`, and `pginf text` support TOON output via
   `--format toon`.
