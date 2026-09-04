@@ -24,4 +24,7 @@ pub use output::{OutputFormat, RenderOutput};
 pub use dom_content_extraction;
 pub use wreq;
 pub use wreq_util;
-pub use wreq_util::Emulation;
+pub use wreq_util::Profile;
+// Compatibility alias: `Emulation` was wreq-util's browser enum up to 2.x;
+// in 0.2 it was renamed to `Profile` and `Emulation` became a builder struct.
+pub use wreq_util::Profile as Emulation;

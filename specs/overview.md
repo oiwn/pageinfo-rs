@@ -17,7 +17,7 @@
 Single entry point for all HTTP fetching. Returns `FetchResult` (no cache coupling). Supports:
 
 - proxy with inline auth and env var fallback
-- browser emulation via `wreq_util::Emulation` (TLS fingerprint + headers)
+- browser emulation via `wreq_util::Profile` (TLS fingerprint + headers)
 - automatic fallback on 403/429/503/connection errors
 - configurable timeout
 - redirect following via per-request `wreq::redirect::Policy`

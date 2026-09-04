@@ -30,25 +30,25 @@ pub async fn resolve_page(
                 reason: e.to_string(),
             })?;
 
-    if !no_cache && !cache.should_refresh() {
-        if let Some(cached) =
+    if !no_cache
+        && !cache.should_refresh()
+        && let Some(cached) =
             cache.load(&cache_key).map_err(|e| ClientError::Request {
                 url: url.to_string(),
                 reason: e.to_string(),
             })?
-        {
-            return Ok(ResolveOutput {
-                fetch_result: FetchResult {
-                    input_url: cached.fetch.input_url,
-                    final_url: cached.fetch.final_url,
-                    status: cached.fetch.status,
-                    headers: cached.headers,
-                    body: cached.html,
-                    ..Default::default()
-                },
-                from_cache: true,
-            });
-        }
+    {
+        return Ok(ResolveOutput {
+            fetch_result: FetchResult {
+                input_url: cached.fetch.input_url,
+                final_url: cached.fetch.final_url,
+                status: cached.fetch.status,
+                headers: cached.headers,
+                body: cached.html,
+                ..Default::default()
+            },
+            from_cache: true,
+        });
     }
 
     let fetch_result = client.fetch(url).await?;

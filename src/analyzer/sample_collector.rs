@@ -84,7 +84,7 @@ impl SampleCollector {
 
         let mut header = Table::new();
         header.set_content_arrangement(ContentArrangement::Dynamic);
-        header.load_preset(UTF8_FULL_CONDENSED);
+        header.load_style(UTF8_FULL_CONDENSED);
         header.add_row(vec![
             Cell::new("Seed URL").add_attribute(Attribute::Bold),
             Cell::new(&self.seed_url),
@@ -126,7 +126,7 @@ impl SampleCollector {
 
             let mut sections_table = Table::new();
             sections_table.set_content_arrangement(ContentArrangement::Dynamic);
-            sections_table.load_preset(UTF8_FULL_CONDENSED);
+            sections_table.load_style(UTF8_FULL_CONDENSED);
             sections_table.set_header(vec![
                 Cell::new("Section").add_attribute(Attribute::Bold),
                 Cell::new("Links")
@@ -156,7 +156,7 @@ impl SampleCollector {
             out.push_str("\n## Path Depth\n");
             let mut depth_table = Table::new();
             depth_table.set_content_arrangement(ContentArrangement::Dynamic);
-            depth_table.load_preset(UTF8_FULL_CONDENSED);
+            depth_table.load_style(UTF8_FULL_CONDENSED);
             depth_table.set_header(vec![
                 Cell::new("Depth").add_attribute(Attribute::Bold),
                 Cell::new("Count").add_attribute(Attribute::Bold),
@@ -172,7 +172,7 @@ impl SampleCollector {
             out.push_str("\n## Utility URLs\n");
             let mut util_table = Table::new();
             util_table.set_content_arrangement(ContentArrangement::Dynamic);
-            util_table.load_preset(UTF8_FULL_CONDENSED);
+            util_table.load_style(UTF8_FULL_CONDENSED);
             for url in &self.aggregate.likely_utility_urls {
                 util_table.add_row(vec![Cell::new(url)]);
             }

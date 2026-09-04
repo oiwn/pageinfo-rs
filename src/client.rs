@@ -75,8 +75,8 @@ fn mask_proxy(url: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct PageClient {
     proxy_url: Option<String>,
-    browser: Option<wreq_util::Emulation>,
-    fallback_browsers: Vec<wreq_util::Emulation>,
+    browser: Option<wreq_util::Profile>,
+    fallback_browsers: Vec<wreq_util::Profile>,
     max_retries: usize,
     timeout: Duration,
     redirect: wreq::redirect::Policy,
@@ -88,9 +88,9 @@ impl Default for PageClient {
             proxy_url: None,
             browser: None,
             fallback_browsers: vec![
-                wreq_util::Emulation::Chrome136,
-                wreq_util::Emulation::Firefox139,
-                wreq_util::Emulation::Safari18_5,
+                wreq_util::Profile::Chrome136,
+                wreq_util::Profile::Firefox139,
+                wreq_util::Profile::Safari18_5,
             ],
             max_retries: 3,
             timeout: Duration::from_secs(30),
@@ -111,7 +111,7 @@ impl PageClient {
         let start = std::time::Instant::now();
         let mut attempts = 0;
         let mut last_err = None;
-        let mut browsers_to_try: Vec<Option<wreq_util::Emulation>> =
+        let mut browsers_to_try: Vec<Option<wreq_util::Profile>> =
             vec![self.browser];
         for fb in &self.fallback_browsers {
             browsers_to_try.push(Some(*fb));
@@ -127,7 +127,7 @@ impl PageClient {
             match self.do_fetch(&client, &parsed).await {
                 Ok(mut result) => {
                     result.duration_ms = start.elapsed().as_millis() as u64;
-                    result.emulation_used = browser_opt.map(|e| format!("{:?}", e));
+                    result.emulation_used = browser_opt.map(|e| format!("{e:?}"));
                     result.proxy_used = self.proxy_url.as_deref().map(mask_proxy);
                     result.attempts = attempts;
                     return Ok(result);
@@ -167,7 +167,7 @@ impl PageClient {
 
     fn build_wreq_client(
         &self,
-        browser: Option<wreq_util::Emulation>,
+        browser: Option<wreq_util::Profile>,
     ) -> Result<wreq::Client, ClientError> {
         let mut builder = wreq::Client::builder().timeout(self.timeout);
 
@@ -214,7 +214,7 @@ impl PageClient {
             });
         }
 
-        let final_url = response.url().to_string();
+        let final_url = response.uri().to_string();
         let headers: HashMap<String, String> = response
             .headers()
             .iter()
@@ -249,42 +249,42 @@ fn is_retryable(err: &ClientError) -> bool {
     }
 }
 
-pub fn parse_browser(name: &str) -> Result<wreq_util::Emulation, ClientError> {
+pub fn parse_browser(name: &str) -> Result<wreq_util::Profile, ClientError> {
     let lower = name.to_ascii_lowercase();
     match lower.as_str() {
-        "chrome" | "chrome137" => Ok(wreq_util::Emulation::Chrome137),
-        "chrome136" => Ok(wreq_util::Emulation::Chrome136),
-        "chrome135" => Ok(wreq_util::Emulation::Chrome135),
-        "chrome134" => Ok(wreq_util::Emulation::Chrome134),
-        "chrome133" => Ok(wreq_util::Emulation::Chrome133),
-        "chrome132" => Ok(wreq_util::Emulation::Chrome132),
-        "chrome131" => Ok(wreq_util::Emulation::Chrome131),
-        "chrome130" => Ok(wreq_util::Emulation::Chrome130),
-        "chrome129" => Ok(wreq_util::Emulation::Chrome129),
-        "chrome128" => Ok(wreq_util::Emulation::Chrome128),
-        "chrome127" => Ok(wreq_util::Emulation::Chrome127),
-        "chrome126" => Ok(wreq_util::Emulation::Chrome126),
-        "chrome124" => Ok(wreq_util::Emulation::Chrome124),
-        "chrome123" => Ok(wreq_util::Emulation::Chrome123),
-        "chrome120" => Ok(wreq_util::Emulation::Chrome120),
-        "chrome119" => Ok(wreq_util::Emulation::Chrome119),
-        "chrome118" => Ok(wreq_util::Emulation::Chrome118),
-        "chrome117" => Ok(wreq_util::Emulation::Chrome117),
-        "chrome116" => Ok(wreq_util::Emulation::Chrome116),
-        "chrome114" => Ok(wreq_util::Emulation::Chrome114),
-        "chrome110" => Ok(wreq_util::Emulation::Chrome110),
-        "chrome109" => Ok(wreq_util::Emulation::Chrome109),
-        "chrome108" => Ok(wreq_util::Emulation::Chrome108),
-        "chrome107" => Ok(wreq_util::Emulation::Chrome107),
-        "chrome106" => Ok(wreq_util::Emulation::Chrome106),
-        "chrome105" => Ok(wreq_util::Emulation::Chrome105),
-        "chrome104" => Ok(wreq_util::Emulation::Chrome104),
-        "chrome101" => Ok(wreq_util::Emulation::Chrome101),
-        "chrome100" => Ok(wreq_util::Emulation::Chrome100),
-        "firefox" => Ok(wreq_util::Emulation::Firefox139),
-        "safari" => Ok(wreq_util::Emulation::Safari18_5),
-        "edge" => Ok(wreq_util::Emulation::Edge134),
-        "okhttp" => Ok(wreq_util::Emulation::OkHttp5),
+        "chrome" | "chrome149" => Ok(wreq_util::Profile::Chrome149),
+        "chrome136" => Ok(wreq_util::Profile::Chrome136),
+        "chrome135" => Ok(wreq_util::Profile::Chrome135),
+        "chrome134" => Ok(wreq_util::Profile::Chrome134),
+        "chrome133" => Ok(wreq_util::Profile::Chrome133),
+        "chrome132" => Ok(wreq_util::Profile::Chrome132),
+        "chrome131" => Ok(wreq_util::Profile::Chrome131),
+        "chrome130" => Ok(wreq_util::Profile::Chrome130),
+        "chrome129" => Ok(wreq_util::Profile::Chrome129),
+        "chrome128" => Ok(wreq_util::Profile::Chrome128),
+        "chrome127" => Ok(wreq_util::Profile::Chrome127),
+        "chrome126" => Ok(wreq_util::Profile::Chrome126),
+        "chrome124" => Ok(wreq_util::Profile::Chrome124),
+        "chrome123" => Ok(wreq_util::Profile::Chrome123),
+        "chrome120" => Ok(wreq_util::Profile::Chrome120),
+        "chrome119" => Ok(wreq_util::Profile::Chrome119),
+        "chrome118" => Ok(wreq_util::Profile::Chrome118),
+        "chrome117" => Ok(wreq_util::Profile::Chrome117),
+        "chrome116" => Ok(wreq_util::Profile::Chrome116),
+        "chrome114" => Ok(wreq_util::Profile::Chrome114),
+        "chrome110" => Ok(wreq_util::Profile::Chrome110),
+        "chrome109" => Ok(wreq_util::Profile::Chrome109),
+        "chrome108" => Ok(wreq_util::Profile::Chrome108),
+        "chrome107" => Ok(wreq_util::Profile::Chrome107),
+        "chrome106" => Ok(wreq_util::Profile::Chrome106),
+        "chrome105" => Ok(wreq_util::Profile::Chrome105),
+        "chrome104" => Ok(wreq_util::Profile::Chrome104),
+        "chrome101" => Ok(wreq_util::Profile::Chrome101),
+        "chrome100" => Ok(wreq_util::Profile::Chrome100),
+        "firefox" => Ok(wreq_util::Profile::Firefox151),
+        "safari" => Ok(wreq_util::Profile::Safari26_4),
+        "edge" => Ok(wreq_util::Profile::Edge148),
+        "okhttp" => Ok(wreq_util::Profile::OkHttp5),
         _ => Err(ClientError::UnknownBrowser(name.to_string())),
     }
 }
@@ -292,8 +292,8 @@ pub fn parse_browser(name: &str) -> Result<wreq_util::Emulation, ClientError> {
 #[derive(Debug, Clone)]
 pub struct PageClientBuilder {
     proxy_url: Option<String>,
-    browser: Option<wreq_util::Emulation>,
-    fallback_browsers: Vec<wreq_util::Emulation>,
+    browser: Option<wreq_util::Profile>,
+    fallback_browsers: Vec<wreq_util::Profile>,
     max_retries: usize,
     timeout: Duration,
     redirect: wreq::redirect::Policy,
@@ -305,9 +305,9 @@ impl PageClientBuilder {
             proxy_url: None,
             browser: None,
             fallback_browsers: vec![
-                wreq_util::Emulation::Chrome136,
-                wreq_util::Emulation::Firefox139,
-                wreq_util::Emulation::Safari18_5,
+                wreq_util::Profile::Chrome136,
+                wreq_util::Profile::Firefox139,
+                wreq_util::Profile::Safari18_5,
             ],
             max_retries: 3,
             timeout: Duration::from_secs(30),
@@ -324,26 +324,23 @@ impl PageClientBuilder {
 
     pub fn proxy_from_env(mut self) -> Self {
         for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
-            if let Ok(val) = std::env::var(var) {
-                if !val.is_empty() {
-                    self.proxy_url = Some(val);
-                    return self;
-                }
+            if let Ok(val) = std::env::var(var)
+                && !val.is_empty()
+            {
+                self.proxy_url = Some(val);
+                return self;
             }
         }
         self
     }
 
-    pub fn browser(mut self, emulation: wreq_util::Emulation) -> Self {
-        self.browser = Some(emulation);
+    pub fn browser(mut self, profile: wreq_util::Profile) -> Self {
+        self.browser = Some(profile);
         self
     }
 
     #[allow(dead_code)]
-    pub fn fallback_browsers(
-        mut self,
-        browsers: Vec<wreq_util::Emulation>,
-    ) -> Self {
+    pub fn fallback_browsers(mut self, browsers: Vec<wreq_util::Profile>) -> Self {
         self.fallback_browsers = browsers;
         self
     }
@@ -404,7 +401,10 @@ mod tests {
     #[test]
     fn builder_default_redirect_policy_is_limited_10() {
         let client = PageClient::builder().build();
-        assert_eq!(format!("{:?}", client.redirect), "Policy(Limit(10))");
+        assert_eq!(
+            format!("{:?}", client.redirect),
+            "Policy { inner: Limit(10) }"
+        );
     }
 
     #[test]
@@ -412,7 +412,7 @@ mod tests {
         let client = PageClient::builder()
             .redirect(wreq::redirect::Policy::none())
             .build();
-        assert_eq!(format!("{:?}", client.redirect), "Policy(None)");
+        assert_eq!(format!("{:?}", client.redirect), "Policy { inner: None }");
     }
 
     #[test]
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn builder_with_browser() {
         let client = PageClient::builder()
-            .browser(wreq_util::Emulation::Chrome131)
+            .browser(wreq_util::Profile::Chrome131)
             .build();
         assert!(client.browser.is_some());
     }
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn builder_custom_fallbacks() {
         let client = PageClient::builder()
-            .fallback_browsers(vec![wreq_util::Emulation::Firefox139])
+            .fallback_browsers(vec![wreq_util::Profile::Firefox139])
             .build();
         assert_eq!(client.fallback_browsers.len(), 1);
     }
@@ -513,7 +513,7 @@ mod tests {
     fn parse_browser_chrome_alias() {
         assert!(matches!(
             parse_browser("chrome"),
-            Ok(wreq_util::Emulation::Chrome137)
+            Ok(wreq_util::Profile::Chrome149)
         ));
     }
 
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn build_wreq_client_with_browser() {
         let client = PageClient::builder()
-            .browser(wreq_util::Emulation::Chrome131)
+            .browser(wreq_util::Profile::Chrome131)
             .build();
         let result = client.build_wreq_client(client.browser);
         assert!(result.is_ok());
@@ -726,7 +726,7 @@ mod integration_tests {
     async fn fetch_records_emulation() {
         let (addr, _handle) = spawn_server(200, "<html>ok</html>").await;
         let client = PageClient::builder()
-            .browser(wreq_util::Emulation::Chrome131)
+            .browser(wreq_util::Profile::Chrome131)
             .timeout(Duration::from_secs(5))
             .build();
         let result = client.fetch(&addr).await;
