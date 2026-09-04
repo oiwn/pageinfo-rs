@@ -50,7 +50,7 @@ let client = PageClient::builder()
     .timeout(std::time::Duration::from_secs(30))
     .build();
 
-let cached_page = client.fetch("https://example.com").await?;
+let result = client.fetch("https://example.com").await?;
 ```
 
 ### Link Extraction
@@ -74,6 +74,7 @@ Features:
 - **Browser emulation** via `wreq_util::Emulation` — sets TLS fingerprint and headers. Available: Chrome 100–137, Firefox, Safari, Edge, OkHttp.
 - **Automatic fallback** — on 403/429/503 or connection errors, retries with the next browser in the fallback chain. Default chain: Chrome 136, Firefox 139, Safari 18.5.
 - **Timeout** — configurable, default 30 seconds.
+- **Redirect following** — `fetch()` follows HTTP redirects by default (up to 10 hops). Configurable via `.redirect(wreq::redirect::Policy)`: `Policy::limited(n)`, `Policy::none()` (surface the raw 3xx as an error), or `Policy::custom(...)`. `get_raw()` never follows.
 
 ## CLI Commands
 
