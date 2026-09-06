@@ -55,13 +55,19 @@ Non-standard block codes (e.g. 462, 465) are NOT retried automatically —
 always pass `--browser chrome137` explicitly when a WAF-protected site
 returns an unusual 4xx status or an "Access Denied" page.
 
-Available browser names: `chrome137`, `chrome136`, ..., `chrome100`, `firefox`,
+Available browser names: `chrome149`, `chrome148`, ..., `chrome100`, `firefox`,
 `safari`, `edge`, `okhttp`.
 
 ## Output
 
 Commands default to text output. `links`, `meta`, and `text` use
 `--format text|json|toon`. `fetch` and `json` still use `--json`.
+
+## Redirects
+
+`fetch` (and all analysis commands) follow up to 10 redirects; `final_url`
+in the output shows the landing page. `pginf http -u <url>` never follows —
+use it to inspect the raw redirect hop (status + Location header).
 
 ## Caching
 
@@ -84,10 +90,10 @@ is not already cached.
 `PageClient` is the core HTTP client, usable from Rust:
 
 ```rust
-use pageinfo_rs::{PageClient, Emulation, FetchResult};
+use pageinfo_rs::{PageClient, Profile, FetchResult};
 
 let client = PageClient::builder()
-    .browser(Emulation::Chrome137)
+    .browser(Profile::Chrome149)
     .build();
 
 let result: FetchResult = client.fetch("https://example.com").await?;

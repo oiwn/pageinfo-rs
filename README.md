@@ -42,11 +42,11 @@ After updating, re-run `pginf install skills local` (or `global`) to refresh the
 `PageClient` is the core HTTP client. Usable from any async Rust code:
 
 ```rust
-use pageinfo_rs::{PageClient, Emulation};
+use pageinfo_rs::{PageClient, Profile};
 
 let client = PageClient::builder()
     .proxy("socks5://user:pass@host:port")?
-    .browser(Emulation::Chrome137)
+    .browser(Profile::Chrome149)
     .timeout(std::time::Duration::from_secs(30))
     .build();
 
