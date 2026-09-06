@@ -4,7 +4,7 @@
 [![Coverage](https://codecov.io/gh/oiwn/pageinfo-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/oiwn/pageinfo-rs)
 [![crates.io](https://img.shields.io/crates/v/pageinfo-rs.svg)](https://crates.io/crates/pageinfo-rs)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](https://github.com/oiwn/pageinfo-rs/blob/main/LICENSE)
-![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
+![Rust 1.98+](https://img.shields.io/badge/rust-1.98%2B-orange.svg)
 
 CLI tool and library for researching web pages. Built to help LLMs inspect sites and build crawlers.
 
@@ -42,15 +42,15 @@ After updating, re-run `pginf install skills local` (or `global`) to refresh the
 `PageClient` is the core HTTP client. Usable from any async Rust code:
 
 ```rust
-use pageinfo_rs::{PageClient, Emulation};
+use pageinfo_rs::{PageClient, Profile};
 
 let client = PageClient::builder()
     .proxy("socks5://user:pass@host:port")?
-    .browser(Emulation::Chrome137)
+    .browser(Profile::Chrome149)
     .timeout(std::time::Duration::from_secs(30))
     .build();
 
-let cached_page = client.fetch("https://example.com").await?;
+let result = client.fetch("https://example.com").await?;
 ```
 
 ### Link Extraction
@@ -71,9 +71,10 @@ Also exported: `extract_registered_domain`, `UrlFacts`, `DateKind`.
 Features:
 
 - **Proxy support** with inline auth (`socks5://user:pass@host:port`). Falls back to `HTTPS_PROXY`/`HTTP_PROXY` env vars.
-- **Browser emulation** via `wreq_util::Emulation` — sets TLS fingerprint and headers. Available: Chrome 100–137, Firefox, Safari, Edge, OkHttp.
+- **Browser emulation** via `wreq_util::Profile` — sets TLS fingerprint and headers. Available: Chrome 100–149, Firefox, Safari, Edge, OkHttp.
 - **Automatic fallback** — on 403/429/503 or connection errors, retries with the next browser in the fallback chain. Default chain: Chrome 136, Firefox 139, Safari 18.5.
 - **Timeout** — configurable, default 30 seconds.
+- **Redirect following** — `fetch()` follows HTTP redirects by default (up to 10 hops). Configurable via `.redirect(wreq::redirect::Policy)`: `Policy::limited(n)`, `Policy::none()` (surface the raw 3xx as an error), or `Policy::custom(...)`. `get_raw()` never follows.
 
 ## CLI Commands
 

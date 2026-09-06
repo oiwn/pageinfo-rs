@@ -13,6 +13,31 @@
 
 ### Breaking changes
 
+- MSRV raised to Rust 1.98 (forced by wreq 0.16).
+- Upgraded wreq 5.3 (yanked) → 0.16.1 and wreq-util 2.2.6 (yanked) → 0.2.0 —
+  the stabilized 6.0.0-rc line under a reset version scheme. `FetchResult`
+  internals now use `http::Uri`. `charset` feature enabled for response text
+  decoding parity.
+- `PageClientBuilder::browser()` and `parse_browser()` now take/return
+  `wreq_util::Profile` (wreq-util renamed the browser enum; `Emulation` is
+  now a builder struct). `pageinfo_rs::Emulation` remains available as an
+  alias for `Profile`, so existing `Emulation::Chrome137` call sites compile.
+- Browser family aliases now map to latest profiles: `chrome` → Chrome 149,
+  `firefox` → Firefox 151, `safari` → Safari 26.4, `edge` → Edge 148.
+- Upgraded comfy-table 7 → 8, sha2 0.10 → 0.11, toon-format 0.4.5 → 0.5.
+
+### Supply chain
+
+- All direct dependency requirements pinned to `major.minor` precision;
+  `cargo update` can only move patch versions of direct deps.
+- Lockfile refreshed: fixes RUSTSEC-2026-0007 (bytes), RUSTSEC-2025-0047
+  (slab), RUSTSEC-2026-0009 (time), RUSTSEC-2026-0194/0195 (quick-xml).
+  `cargo audit` now reports 0 vulnerabilities.
+- New `deps-audit.yml` workflow runs `cargo audit` on every PR, push to
+  main, and manual dispatch.
+
+### Breaking changes (output surface)
+
 - `pginf meta`, `pginf links`, and `pginf text` now use `--format text|json|toon`
   for output selection.
 - Removed legacy `pginf meta --json`, `pginf links --json`, and
@@ -25,6 +50,12 @@
 
 ### New features
 
+- `PageClient::fetch()` now follows HTTP redirects (default `Policy::limited(10)`);
+  `FetchResult.final_url` reflects the post-redirect URL.
+- `PageClientBuilder::redirect(wreq::redirect::Policy)` — full control from the
+  caller (`limited(n)`, `none()`, `custom(...)`). `Policy::none()` surfaces the raw
+  3xx as `ClientError::Fetch`. Ignored by `get_raw()` (`http` command keeps showing
+  the first hop).
 - Shared typed output/rendering system with `OutputFormat` and `RenderOutput`.
 - `pginf meta`, `pginf links`, and `pginf text` support TOON output via
   `--format toon`.

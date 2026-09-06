@@ -205,7 +205,7 @@ impl PageInfo {
         out.push_str("\n## Structured Data\n");
         let mut table = Table::new();
         table.set_content_arrangement(ContentArrangement::Dynamic);
-        table.load_preset(UTF8_FULL_CONDENSED);
+        table.load_style(UTF8_FULL_CONDENSED);
         table.add_row(vec![
             Cell::new("JSON-LD").add_attribute(Attribute::Bold),
             Cell::new(self.structured_data.json_ld_count),
@@ -227,7 +227,7 @@ impl PageInfo {
     fn format_header(&self) -> String {
         let mut header = Table::new();
         header.set_content_arrangement(ContentArrangement::Dynamic);
-        header.load_preset(UTF8_FULL_CONDENSED);
+        header.load_style(UTF8_FULL_CONDENSED);
         header.add_row(vec![
             Cell::new("URL").add_attribute(Attribute::Bold),
             Cell::new(&self.url),
@@ -267,7 +267,7 @@ impl PageInfo {
         out.push_str("\n## Summary\n");
         let mut table = Table::new();
         table.set_content_arrangement(ContentArrangement::Dynamic);
-        table.load_preset(UTF8_FULL_CONDENSED);
+        table.load_style(UTF8_FULL_CONDENSED);
         table.add_row(vec![
             Cell::new("Internal links").add_attribute(Attribute::Bold),
             Cell::new(self.url_facts.total_internal),
