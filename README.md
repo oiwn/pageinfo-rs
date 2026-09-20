@@ -35,7 +35,7 @@ Binary name: `pginf`. Library crate: `pageinfo_rs`.
 cargo install pageinfo-rs --force
 ```
 
-After updating, re-run `pginf install skills local` (or `global`) to refresh the LLM skill file.
+After updating, re-run `pginf skill install` (add `--local` for project-local) to refresh the LLM skill file.
 
 ## Library Usage
 
@@ -154,13 +154,14 @@ Low-level HTTP debug command. Shows request/response headers, body, and timing.
 pginf http -u https://example.com
 ```
 
-### `install`
+### `skill`
 
-Install pginf skill files for AI coding agents.
+Manage the pginf skill for AI coding agents.
 
 ```bash
-pginf install skills local     # <project>/.agents/skills/pginf/SKILL.md
-pginf install skills global    # ~/.agents/skills/pginf/SKILL.md
+pginf skill install            # ~/.agents/skills/pginf/SKILL.md (global, default)
+pginf skill install --local    # <project>/.agents/skills/pginf/SKILL.md
+pginf skill check              # installed skill versions vs this binary
 ```
 
 ### `help`
@@ -199,11 +200,11 @@ pginf --timeout 60 fetch https://example.com
 An LLM tool skill is available at [`skills/pginf.md`](skills/pginf.md). Install it with:
 
 ```bash
-pginf install skills local     # project-local
-pginf install skills global    # user-level
+pginf skill install --local    # project-local
+pginf skill install            # user-level
 ```
 
-After upgrading pginf, re-run the install command to update the skill file. It detects the `installed-by: pginf` marker and overwrites safely.
+After upgrading pginf, re-run the install command to update the skill file. It detects the `installed-by: pginf` marker and overwrites safely. Run `pginf skill check` to see whether an installed file is up to date, stale, or locally modified.
 
 ## Cache
 

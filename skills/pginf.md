@@ -31,8 +31,9 @@ pginf text <url> --format toon
 pginf html -u <url>                         # full HTML
 pginf html -u <url> -s "div.article"        # elements matching CSS selector
 pginf http -u <url>                         # raw request/response debug
-pginf install skills local                  # install skill to <project>/.agents/skills/pginf/
-pginf install skills global                 # install skill to ~/.agents/skills/pginf/
+pginf skill install                         # install skill to ~/.agents/skills/pginf/
+pginf skill install --local                 # install skill to <project>/.agents/skills/pginf/
+pginf skill check                           # installed skill versions vs this binary
 pginf help tool                             # built-in guide
 ```
 

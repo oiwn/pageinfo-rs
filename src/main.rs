@@ -153,28 +153,23 @@ enum Commands {
         #[arg(long)]
         refresh: bool,
     },
-    /// Install pginf skill files for AI coding agents
+    /// Manage the pginf skill for AI coding agents
+    Skill {
+        #[command(subcommand)]
+        command: SkillCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum SkillCommand {
+    /// Install the pginf skill to an agents skills directory (global by default)
     Install {
-        #[command(subcommand)]
-        command: InstallCommand,
+        /// Install locally to .agents/skills/ instead of globally
+        #[arg(long)]
+        local: bool,
     },
-}
-
-#[derive(Subcommand, Debug)]
-enum InstallCommand {
-    /// Install skill files
-    Skills {
-        #[command(subcommand)]
-        target: SkillsTarget,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum SkillsTarget {
-    /// Install into <project>/.agents/skills/pginf/
-    Local,
-    /// Install into ~/.agents/skills/pginf/
-    Global,
+    /// Check installed skill versions against this binary
+    Check,
 }
 
 #[tokio::main]
@@ -362,16 +357,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        Commands::Install { command } => match command {
-            InstallCommand::Skills { target } => match target {
-                SkillsTarget::Local => match skills::install_local() {
-                    Ok(msg) => println!("{msg}"),
-                    Err(e) => eprintln!("{e}"),
-                },
-                SkillsTarget::Global => match skills::install_global() {
-                    Ok(msg) => println!("{msg}"),
-                    Err(e) => eprintln!("{e}"),
-                },
+        Commands::Skill { command } => match command {
+            SkillCommand::Install { local } => match skills::install(*local) {
+                Ok(msg) => println!("{msg}"),
+                Err(e) => eprintln!("{e}"),
+            },
+            SkillCommand::Check => match skills::check() {
+                Ok(msg) => println!("{msg}"),
+                Err(e) => eprintln!("{e}"),
             },
         },
     };
@@ -863,30 +856,40 @@ mod tests {
     }
 
     #[test]
-    fn install_skills_local_parses() {
-        let cli =
-            Cli::try_parse_from(["pginf", "install", "skills", "local"]).unwrap();
+    fn skill_install_default_is_global() {
+        let cli = Cli::try_parse_from(["pginf", "skill", "install"]).unwrap();
         match cli.command {
-            Commands::Install {
-                command: InstallCommand::Skills { target },
+            Commands::Skill {
+                command: SkillCommand::Install { local },
             } => {
-                assert!(matches!(target, SkillsTarget::Local));
+                assert!(!local);
             }
-            _ => panic!("expected install skills local"),
+            _ => panic!("expected skill install"),
         }
     }
 
     #[test]
-    fn install_skills_global_parses() {
+    fn skill_install_local_flag_parses() {
         let cli =
-            Cli::try_parse_from(["pginf", "install", "skills", "global"]).unwrap();
+            Cli::try_parse_from(["pginf", "skill", "install", "--local"]).unwrap();
         match cli.command {
-            Commands::Install {
-                command: InstallCommand::Skills { target },
+            Commands::Skill {
+                command: SkillCommand::Install { local },
             } => {
-                assert!(matches!(target, SkillsTarget::Global));
+                assert!(local);
             }
-            _ => panic!("expected install skills global"),
+            _ => panic!("expected skill install --local"),
+        }
+    }
+
+    #[test]
+    fn skill_check_parses() {
+        let cli = Cli::try_parse_from(["pginf", "skill", "check"]).unwrap();
+        match cli.command {
+            Commands::Skill {
+                command: SkillCommand::Check,
+            } => {}
+            _ => panic!("expected skill check"),
         }
     }
 
