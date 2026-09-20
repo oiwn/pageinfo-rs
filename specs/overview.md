@@ -48,6 +48,10 @@ Top-level commands (no nesting):
 
 All commands support `--json` for machine-readable output. Default is markdown.
 
+`skill install [--local]` and `skill check` manage the bundled agent skill
+(installed to `~/.agents/skills/pginf/` by default, `.agents/skills/pginf/`
+with `--local`; `pginf.meta` stamps the installing version).
+
 ### `http` Command
 
 Low-level debug command showing full HTTP transaction (request/response headers, body, timing). Uses `http_display.rs` for formatting.
@@ -73,6 +77,8 @@ File-based page cache in `.pginf/`. Stores fetch metadata, response headers, raw
 - Structured data detection (JSON-LD, Next.js, inline JSON)
 - URL grouping by first path segment
 - Path depth distribution
+- Skill install unified with specdev: `pginf skill install [--local]`,
+  `pginf skill check`, `pginf.meta` version stamp + staleness detection
 
 ### Not Done Yet
 

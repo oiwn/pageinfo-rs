@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-20 — Unified skill install CLI with specdev
+
+- New `pginf skill install [--local]` — installs the bundled agent skill to
+  `~/.agents/skills/pginf/` by default, or `.agents/skills/pginf/` with
+  `--local`. Replaces `pginf install skills local|global`.
+- New `pginf skill check` — reports install state per target (Global/Local):
+  up to date, STALE, LOCALLY MODIFIED, UNKNOWN ORIGIN, or missing, using a
+  `pginf.meta` version stamp and numeric version comparison.
+- Kept the foreign-skill skip guard: an existing `SKILL.md` without the
+  `installed-by: pginf` marker is never overwritten.
+
 ## 2026-08-10 — Removed Obscura rendering
 
 - Removed the feature-gated `pginf render` command and public renderer API.
@@ -28,13 +39,21 @@
 
 ### Supply chain
 
-- All direct dependency requirements pinned to `major.minor` precision;
-  `cargo update` can only move patch versions of direct deps.
+- All direct dependency requirements pinned to `major.minor.patch`
+  precision, matching the tested lockfile versions; `cargo update` can only
+  move patch versions of direct deps.
 - Lockfile refreshed: fixes RUSTSEC-2026-0007 (bytes), RUSTSEC-2025-0047
   (slab), RUSTSEC-2026-0009 (time), RUSTSEC-2026-0194/0195 (quick-xml).
   `cargo audit` now reports 0 vulnerabilities.
 - New `deps-audit.yml` workflow runs `cargo audit` on every PR, push to
   main, and manual dispatch.
+- Lockfile patch-level refresh via `cargo update` (~40 crates within existing
+  requirements, e.g. clap 4.6.7, encoding_rs 0.8.41, quick-xml 0.42,
+  syn 3.0.6, zstd-sys 2.1.0). `cargo audit` still reports 0 vulnerabilities;
+  5 warnings remain allowlisted (unmaintained/unsound, no fix available).
+- `deps-audit.yml` hardened (matching the exodata workflow): weekly Friday
+  schedule, `cargo metadata --locked` verification of the committed lockfile,
+  and a PR check requiring a Cargo.lock update with any Cargo.toml change.
 
 ### Breaking changes (output surface)
 
